@@ -1,4 +1,4 @@
-# pyroDash-evaluate
+# pyroDash
 
 **Language / 语言:** [English](README.md) | [中文](README_zh.md)
 
@@ -15,9 +15,10 @@
 
 ## Overview
 
-![Cost–Accuracy Pareto](./figs/fig_cost_accuracy_pareto.png)
-
-![Inference Architecture](./figs/fig_inference_architecture.png)
+<p align="center">
+  <img src="./figs/fig_cost_accuracy_pareto.png" alt="Cost–Accuracy Pareto" width="48%" />
+  <img src="./figs/fig_inference_architecture.png" alt="Inference Architecture" width="48%" />
+</p>
 
 ---
 
