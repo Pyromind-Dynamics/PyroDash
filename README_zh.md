@@ -2,27 +2,26 @@
 
 **Language / 语言:** [English](README.md) | [中文](README_zh.md)
 
-<p align="center">
-  <!-- TODO: 替换下方链接 -->
-  <a href="TODO_MODEL_URL"><img src="https://img.shields.io/badge/🤗%20Model-Coming%20Soon-yellow" alt="Model"></a>
-  <a href="TODO_REPRODUCE_URL"><img src="https://img.shields.io/badge/🚀%20Quick%20Reproduce-PyroMind-orange" alt="Quick Reproduce"></a>
-  <a href="TODO_PAPER_URL"><img src="https://img.shields.io/badge/📄%20Paper-Coming%20Soon-lightgrey" alt="Paper"></a>
-</p>
+<a href="TODO_PAPER_URL"><img src="https://img.shields.io/badge/📄%20Paper-Coming%20Soon-lightgrey"/></a>&nbsp;&nbsp;<a href="TODO_MODEL_URL"><img src="https://img.shields.io/badge/🤗%20Model-Coming%20Soon-yellow"/></a>&nbsp;&nbsp;<a href="TODO_REPRODUCE_URL"><img src="https://img.shields.io/badge/🚀%20Quick%20Reproduce-PyroMind-orange"/></a>
+
+---
 
 > **一键复现：** 点击 [🚀 Quick Reproduce](TODO_REPRODUCE_URL)，进入公司平台即可端到端快速复现评测。
 
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="./figs/fig_inference_architecture.png" alt="Inference Architecture" width="100%"/>
+</td>
+<td width="50%" valign="top">
+
+</td>
+</tr>
+</table>
+
 ---
 
-## Overview
-
-<p align="center">
-  <img src="./figs/fig_cost_accuracy_pareto.png" alt="Cost–Accuracy Pareto" width="48%" />
-  <img src="./figs/fig_inference_architecture.png" alt="Inference Architecture" width="48%" />
-</p>
-
----
-
-## 快速开始
+## 🚀 快速开始
 
 ### 1. 环境准备
 
@@ -57,12 +56,13 @@ Tokenizer 必须包含特殊 token `<|llm_offload|>`。
 
 ---
 
-## Results
+## 📊 Results
 
-
+<p align="center">
+  <img src="./figs/fig_cost_accuracy_pareto.png" alt="Cost–Accuracy Pareto" width="70%"/>
+</p>
 
 ---
 
-## Citation
-
+## 📖 Citation
 
