@@ -1,92 +1,86 @@
-# pyroDash-eval
+# pyroDash-evaluate
 
 **Language / 语言:** [English](README.md) | [中文](README_zh.md)
 
-Offload math evaluation: local small model (vLLM) generates first; if it emits `<|llm_offload|>`, a stronger GLM continues; answers are scored via `\boxed{}`.
+<p align="center">
+  <!-- TODO: replace links below -->
+  <a href="TODO_MODEL_URL"><img src="https://img.shields.io/badge/🤗%20Model-Coming%20Soon-yellow" alt="Model"></a>
+  <a href="TODO_REPRODUCE_URL"><img src="https://img.shields.io/badge/🚀%20Quick%20Reproduce-PyroMind-orange" alt="Quick Reproduce"></a>
+  <a href="TODO_PAPER_URL"><img src="https://img.shields.io/badge/📄%20Paper-Coming%20Soon-lightgrey" alt="Paper"></a>
+</p>
 
-## Layout
-
-| File | Role |
-|------|------|
-| `math_eval.sh` | Start vLLM, then run evaluation |
-| `math_eval.py` | Main eval loop: prompt → small model → optional GLM relay → score → save JSON |
-| `datasets_loader.py` | Load benchmark questions/answers (`get_dataset_handler`) |
-| `boxed_socre.py` | Score `\boxed{}` answers (`compare_answer`, `score_boxed_answer`, …) |
-| `llm_relay.py` | Relay offloaded samples to GLM (`complete_offload_batch`) |
-
-### Key functions
-
-- **`datasets_loader.get_dataset_handler(name)`** — return a handler; call `load_data()` → `(questions, answers)`.
-- **`boxed_socre.compare_answer(response, answer)`** — True if predicted `\boxed{}` matches ground truth (via `math_verify`).
-- **`llm_relay.complete_offload_batch(...)`** — for responses containing `<|llm_offload|>`, continue generation with GLM.
-- **`math_eval.run_dataset(...)`** — run one dataset end-to-end and write `{dataset}_results.json`.
-
-## Quick start
-
-1. Edit placeholders in `math_eval.sh` (see below).
-2. Install deps: `pip install math_verify mathruler pylatexenc requests tqdm pandas datasets transformers` (plus `vllm` on the GPU machine).
-3. Run:
-
-```bash
-bash math_eval.sh
-```
-
-Results land under `--output-dir` (default in the script: `./results_500`).
+> **Quick reproduce:** Click [🚀 Quick Reproduce](TODO_REPRODUCE_URL) to open our company platform and reproduce the evaluation end-to-end with one click.
 
 ---
 
-## `math_eval.sh` — what to set
+## Overview
 
-Script flow: (1) `vllm serve` the small model on port `8001`; (2) call `math_eval.py` with the same model + GLM relay settings.
+![Cost–Accuracy Pareto](./figs/fig_cost_accuracy_pareto.png)
 
-### Must change (placeholders)
+![Inference Architecture](./figs/fig_inference_architecture.png)
 
-| Variable / flag | Meaning | What to pass |
-|-----------------|---------|--------------|
-| `MODEL` | Local merged model directory used by both `vllm serve` and tokenizer loading | Absolute path to your checkpoint, e.g. `/path/to/your/merged_model` |
-| `--glm-base-url` | OpenAI-compatible API base for the large/relay model | e.g. `http://your-glm-host:8000/v1` |
-| `--glm-api-key` | API key for that endpoint | e.g. `your-glm-api-key` (or whatever the server expects) |
-| `--glm-model` | Served model name on the GLM side | e.g. `your-glm-model` (must match the remote `--served-model-name`) |
+---
 
-### Usually keep / tune as needed
+## Quick Start
+
+### 1. Setup
+
+```bash
+git clone https://github.com/PyroMind-Dynamics/pyroDash-evaluate.git
+cd pyroDash-evaluate
+pip install -r requirements.txt
+```
+
+### 2. Run evaluation (`evaluation/math_eval.sh`)
+
+Edit placeholders in [`evaluation/math_eval.sh`](evaluation/math_eval.sh), then:
+
+```bash
+bash evaluation/math_eval.sh
+```
+
+The script (1) starts a local **vLLM** server for the small model on port `8001`, (2) runs `math_eval.py`, and (3) stops vLLM on exit.
+
+#### Must set
+
+| Variable / flag | Meaning | Example |
+|-----------------|---------|---------|
+| `MODEL` | Local merged model path (vLLM serve + tokenizer) | `/path/to/your/merged_model` |
+| `--glm-base-url` | OpenAI-compatible API for the large/relay model | `http://your-glm-host:8000/v1` |
+| `--glm-api-key` | API key for that endpoint | `your-glm-api-key` |
+| `--glm-model` | Served model name on the GLM side | `your-glm-model` |
+
+#### Common options
 
 | Flag | Meaning | Typical value |
 |------|---------|---------------|
-| `--model-path` | Same as `MODEL`; used only to load tokenizer / chat template | `"$MODEL"` |
-| `--small-base-url` | Local vLLM OpenAI API root | `http://127.0.0.1:8001/v1` (must match serve host/port) |
-| `--small-model` | Local served model name | `small-model` (must match `--served-model-name` in `vllm serve`) |
-| `--output-dir` | Where per-dataset JSON results go | e.g. `./results_500` |
-| `--datasets` | Benchmarks to run (space-separated) | one or more of: `math` `gsm8k` `minerva` `olympiad` `aime2024` `aime2025` `amc` `mydataset` |
-| `--max-tokens` | Max completion tokens for the small model; also the **total** small+GLM completion budget | e.g. `8192` |
-| `--glm-max-workers` | Parallel GLM requests (set in Python CLI; not in the default `.sh`) | default `256` |
+| `--model-path` | Same as `MODEL` (tokenizer / chat template) | `"$MODEL"` |
+| `--small-base-url` | Local vLLM OpenAI API root | `http://127.0.0.1:8001/v1` |
+| `--small-model` | Local served model name | `small-model` |
+| `--output-dir` | Per-dataset JSON output directory | `./results_500` |
+| `--datasets` | Benchmarks (space-separated) | `gsm8k minerva olympiad aime2024 aime2025` |
+| `--max-tokens` | Small-model max tokens; also total small+GLM budget | `8192` |
 
-### vLLM block in the script
+#### vLLM settings in the script
 
 | Setting | Meaning |
 |---------|---------|
-| `CUDA_VISIBLE_DEVICES` | Which GPU to use |
+| `CUDA_VISIBLE_DEVICES` | GPU id |
 | `--port 8001` | Local serve port (keep in sync with `--small-base-url`) |
-| `--served-model-name small-model` | Name clients use; keep in sync with `--small-model` |
-| `--max-model-len` | Context length for vLLM |
+| `--served-model-name small-model` | Keep in sync with `--small-model` |
+| `--max-model-len` | Context length |
 | `--gpu-memory-utilization` | GPU memory fraction |
+
+Tokenizer must include the special token `<|llm_offload|>`.
 
 ---
 
-## Example after filling in
+## Results
 
-```bash
-MODEL=/data/models/offload_merged_ckpt
 
-python math_eval.py \
-  --model-path "$MODEL" \
-  --small-base-url http://127.0.0.1:8001/v1 \
-  --small-model small-model \
-  --output-dir ./results \
-  --datasets math gsm8k \
-  --glm-base-url http://127.0.0.1:8000/v1 \
-  --glm-api-key sk-xxx \
-  --glm-model glm-fp8 \
-  --max-tokens 8192
-```
 
-Tokenizer must include the special token `<|llm_offload|>`; otherwise `math_eval.py` exits with an error.
+---
+
+## Citation
+
+

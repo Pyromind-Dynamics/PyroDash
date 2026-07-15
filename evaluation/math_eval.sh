@@ -28,7 +28,7 @@ python "$(dirname "$0")/math_eval.py" \
   --small-base-url http://127.0.0.1:8001/v1 \
   --small-model small-model \
   --output-dir ./results_500 \
-  --datasets math gsm8k minerva olympiad aime2024 aime2025 \
+  --datasets gsm8k minerva olympiad aime2024 aime2025 \
   --glm-base-url http://your-glm-host:8000/v1 \
   --glm-api-key your-glm-api-key \
   --glm-model your-glm-model \
