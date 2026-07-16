@@ -2,11 +2,11 @@
 
 **Language / 语言:** [English](README.md) | [中文](README_zh.md)
 
-<a href="TODO_PAPER_URL"><img src="https://img.shields.io/badge/📄%20Paper-Coming%20Soon-lightgrey"/></a>&nbsp;&nbsp;<a href="TODO_MODEL_URL"><img src="https://img.shields.io/badge/🤗%20Model-Coming%20Soon-yellow"/></a>&nbsp;&nbsp;<a href="TODO_REPRODUCE_URL"><img src="https://img.shields.io/badge/🚀%20Quick%20Reproduce-PyroMind-orange"/></a>
+<a href="https://PyroMind-Dynamics.github.io/pyroDash-evaluate/"><img src="https://img.shields.io/badge/🌐%20Website-GitHub%20Pages-blue"/></a>&nbsp;&nbsp;<a href="#-citation"><img src="https://img.shields.io/badge/📄%20Paper-Preprint-blue"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/datasets/pyromind/easyhard-24k"><img src="https://img.shields.io/badge/🤗%20Dataset-EasyHard--24K-yellow"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/pyromind"><img src="https://img.shields.io/badge/🤗%20HuggingFace-pyromind-yellow"/></a>&nbsp;&nbsp;<a href="https://pyromind.ai/"><img src="https://img.shields.io/badge/🚀%20Quick%20Reproduce-PyroMind-orange"/></a>
 
 ---
 
-> **Quick reproduce:** Click [🚀 Quick Reproduce](TODO_REPRODUCE_URL) to open our company platform and reproduce the evaluation end-to-end with one click.
+> **Quick reproduce:** Open [PyroMind Console](https://pyromind.ai/) to reproduce the evaluation end-to-end with one click. Training data: [EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k) on Hugging Face.
 
 <table>
 <tr>
@@ -21,7 +21,7 @@ We propose **PyroDash**, a token-level dynamic reasoning paradigm for collaborat
 </tr>
 </table>
 
-During training, PyroDash follows a three-stage progressive optimization pipeline: (1) train the control-token embedding layer so the small model acquires basic offloading expressiveness; (2) cold-start the offload capability to establish a collaboration pattern between the small and large models; and (3) apply GRPO reinforcement learning that jointly optimizes the dynamic offloading policy with a task-accuracy reward and a large-model call-cost penalty, achieving an adaptive balance between reasoning quality and compute cost. For more details, please refer to our [paper](TODO_PAPER_URL).
+During training, PyroDash follows a three-stage progressive optimization pipeline: (1) train the control-token embedding layer so the small model acquires basic offloading expressiveness; (2) cold-start the offload capability to establish a collaboration pattern between the small and large models; and (3) apply GRPO reinforcement learning that jointly optimizes the dynamic offloading policy with a task-accuracy reward and a large-model call-cost penalty, achieving an adaptive balance between reasoning quality and compute cost. For more details, please refer to our paper (citation below).
 
 ---
 
@@ -68,5 +68,38 @@ Tokenizer must include the special token `<|llm_offload|>`.
 
 ---
 
+## 🔗 Resources
+
+| Resource | Link |
+|----------|------|
+| Project website | [PyroMind-Dynamics.github.io/pyroDash-evaluate](https://PyroMind-Dynamics.github.io/pyroDash-evaluate/) |
+| Paper | Preprint — see [Citation](#-citation) |
+| Dataset (EasyHard-24K) | [huggingface.co/datasets/pyromind/easyhard-24k](https://huggingface.co/datasets/pyromind/easyhard-24k) |
+| Hugging Face org | [huggingface.co/pyromind](https://huggingface.co/pyromind) |
+| PyroMind Console | [pyromind.ai](https://pyromind.ai/) |
+
+---
+
 ## 📖 Citation
 
+If you find PyroDash useful, please cite:
+
+```bibtex
+@misc{pyrodash2026,
+  title        = {PyroDash: Cost-Efficient Token-Level Small-Large Model Collaborative Inference},
+  author       = {{PyroMind Dynamics}},
+  year         = {2026},
+  note         = {Preprint}
+}
+```
+
+Dataset:
+
+```bibtex
+@misc{pyromind2026easyhard24k,
+  title        = {{EasyHard-24K} v0.02},
+  author       = {{PyroMind Dynamics}},
+  year         = {2026},
+  howpublished = {\url{https://huggingface.co/datasets/pyromind/easyhard-24k}}
+}
+```

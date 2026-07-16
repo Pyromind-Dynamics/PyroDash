@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PyroDash — Cost-Efficient Token-Level Collaborative Inference</title>
+  <meta name="description" content="PyroDash: small models emit &lt;|llm_offload|&gt; to hand off hard reasoning to large models — quality near LLM-only, cost far lower." />
+  <meta property="og:title" content="PyroDash" />
+  <meta property="og:description" content="Token-level collaborative inference between small and large language models." />
+  <meta property="og:image" content="assets/fig_inference_architecture.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png" />
+  <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png" />
+  <link rel="shortcut icon" type="image/png" href="assets/favicon.png" />
+  <link rel="apple-touch-icon" href="assets/favicon-64.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Noto+Sans+SC:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <a class="skip" href="#main" data-i18n="skip">Skip to content</a>
+
+  <nav class="site-nav" aria-label="Primary">
+    <a class="brand" href="#">
+      <img class="brand-mark" src="assets/favicon-64.png" alt="" width="28" height="28" />
+      <span class="brand-text">Pyro<span>Dash</span></span>
+    </a>
+    <ul class="nav-links">
+      <li class="nav-hide-sm"><a href="#method" data-i18n="nav_method">Method</a></li>
+      <li class="nav-hide-sm"><a href="#results" data-i18n="nav_results">Results</a></li>
+      <li class="nav-hide-sm"><a href="#cases" data-i18n="nav_cases">Cases</a></li>
+      <li><a href="#resources" data-i18n="nav_resources">Resources</a></li>
+      <li>
+        <button type="button" class="lang-toggle" id="lang-toggle" aria-label="Switch language">中文</button>
+      </li>
+    </ul>
+  </nav>
+
+  <main id="main">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="hero-brand">Pyro<em>Dash</em></p>
+        <h1 class="hero-title" data-i18n="hero_title">Small models ask for help — only when it counts.</h1>
+        <p class="hero-lead" data-i18n="hero_lead">Token-level offload with &lt;|llm_offload|&gt;. Near LLM quality, a fraction of the cloud bill.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="https://pyromind.ai/" data-i18n="cta_reproduce">Reproduce on PyroMind</a>
+          <a class="btn btn-ghost" href="https://github.com/PyroMind-Dynamics/pyroDash-evaluate" data-i18n="cta_github">View on GitHub</a>
+        </div>
+      </div>
+      <div class="hero-visual">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <img src="assets/fig_inference_architecture.png" alt="PyroDash inference architecture" width="880" height="1216" />
+      </div>
+    </header>
+
+    <section class="section" id="method">
+      <div class="section-inner reveal">
+        <p class="section-label" data-i18n="method_label">How it works</p>
+        <h2 class="section-title" data-i18n="method_title">Introspective routing inside the generation stream</h2>
+        <p class="section-desc" data-i18n="method_desc">No external router. No LLM retraining. The small model decides mid-reasoning when to hand off — then a frozen large model completes the chain in one shot.</p>
+
+        <div class="pipeline">
+          <article class="pipeline-step">
+            <h3 data-i18n="stage1_title">Control-token embedding</h3>
+            <p data-i18n="stage1_desc">Extend the vocabulary and initialize &lt;|llm_offload|&gt; so the SLM can express offload intent.</p>
+          </article>
+          <article class="pipeline-step">
+            <h3 data-i18n="stage2_title">Offload cold-start</h3>
+            <p data-i18n="stage2_desc">SFT teaches when and how to emit the control token on hard steps while keeping easy steps local.</p>
+          </article>
+          <article class="pipeline-step">
+            <h3 data-i18n="stage3_title">GRPO with cost penalty</h3>
+            <p data-i18n="stage3_desc">Jointly optimize task accuracy and large-model call cost for an adaptive quality–cost frontier.</p>
+          </article>
+        </div>
+        <code class="token-chip">&lt;|llm_offload|&gt;</code>
+      </div>
+    </section>
+
+    <section class="section" id="results">
+      <div class="section-inner reveal">
+        <p class="section-label" data-i18n="results_label">Results</p>
+        <h2 class="section-title" data-i18n="results_title">A tunable quality–cost Pareto frontier</h2>
+        <p class="section-desc" data-i18n="results_desc">On five math benchmarks (Minerva, GSM8K, Olympiad, AIME25, AIME24), PyroDash with Qwen3.5-4B + GLM-5.2 breaks the usual trade-off.</p>
+
+        <div class="metrics">
+          <div class="metric">
+            <p class="metric-value">64.04<span class="unit">%</span></p>
+            <p class="metric-label" data-i18n="metric1">Avg. accuracy (λ=0.05) — above GLM-5.2 alone</p>
+          </div>
+          <div class="metric">
+            <p class="metric-value">96.4<span class="unit">%</span></p>
+            <p class="metric-label" data-i18n="metric2">Cost cut vs. pure cloud (λ=0.6)</p>
+          </div>
+          <div class="metric">
+            <p class="metric-value">1.90<span class="unit">%</span></p>
+            <p class="metric-label" data-i18n="metric3">LLM token ratio at the low-cost operating point</p>
+          </div>
+        </div>
+
+        <figure class="figure-block">
+          <img src="assets/fig_cost_accuracy_pareto.png" alt="Cost–accuracy Pareto frontier" width="1200" height="832" loading="lazy" />
+          <figcaption class="figure-caption" data-i18n="fig_caption">Five-benchmark total cost vs. average accuracy. PyroDash (λ=0.05) exceeds GLM-5.2 accuracy; λ=0.6 drops cost from $49.37 to $1.79.</figcaption>
+        </figure>
+
+        <div class="results-table-wrap">
+          <table class="results">
+            <thead>
+              <tr>
+                <th data-i18n="th_method">Method</th>
+                <th>Avg.</th>
+                <th>LLM Token %</th>
+                <th>Cost ($)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Qwen3.5-4B</td>
+                <td>28.36</td>
+                <td>0.00</td>
+                <td>2.26</td>
+              </tr>
+              <tr>
+                <td>Qwen3.5-4B (+SFT)</td>
+                <td>46.25</td>
+                <td>0.00</td>
+                <td>1.32</td>
+              </tr>
+              <tr>
+                <td>RouteLLM (~75% GLM)</td>
+                <td>52.74</td>
+                <td>77.37</td>
+                <td>44.62</td>
+              </tr>
+              <tr>
+                <td>GlimpRouter</td>
+                <td>54.20</td>
+                <td>75.11</td>
+                <td>31.62</td>
+              </tr>
+              <tr class="is-best">
+                <td>PyroDash (λ=0.05)</td>
+                <td>64.04</td>
+                <td>95.34</td>
+                <td>39.27</td>
+              </tr>
+              <tr>
+                <td>PyroDash (λ=0.6)</td>
+                <td>54.55</td>
+                <td>1.90</td>
+                <td>1.79</td>
+              </tr>
+              <tr>
+                <td>GLM-5.2</td>
+                <td>57.68</td>
+                <td>100.00</td>
+                <td>49.37</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="cases">
+      <div class="section-inner reveal">
+        <p class="section-label" data-i18n="cases_label">Case study</p>
+        <h2 class="section-title" data-i18n="cases_title">Where the small model gets stuck — and asks</h2>
+        <p class="section-desc" data-i18n="cases_desc">Same problem: SLM-only vs. PyroDash relay. Watch the control token fire, then the large model finish the chain.</p>
+
+        <div class="case-tabs" role="tablist" id="case-tabs" aria-label="Cases"></div>
+        <div class="case-panel" id="case-panel">
+          <div class="case-block case-block-full">
+            <h3 id="case-dataset"></h3>
+            <h4 data-i18n="q_label">Question</h4>
+            <div class="case-stream case-stream-q" id="case-question"></div>
+          </div>
+
+          <div class="case-block case-block-full">
+            <h4 data-i18n="gt_label">Answer</h4>
+            <p class="case-answer" id="case-answer"></p>
+          </div>
+
+          <div class="case-block case-block-full">
+            <h4>
+              <span data-i18n="alone_label">SLM response</span>
+              <!-- <span class="pill pill-muted" data-i18n="alone_hint">initial_response</span> -->
+            </h4>
+            <div class="case-stream" id="case-slm"></div>
+          </div>
+
+          <div class="case-block case-block-full">
+            <h4>
+              <span data-i18n="offload_label">Offload relay</span>
+              <!-- <span class="pill pill-ok" data-i18n="relay_hint">relay_response</span> -->
+            </h4>
+          </div>
+
+          <div class="case-block">
+            <h4>
+              <span data-i18n="offload_slm_label">SLM (before offload)</span>
+              <!-- <span class="pill pill-ember">raw_response</span> -->
+            </h4>
+            <div class="case-stream" id="case-offload-slm"></div>
+          </div>
+
+          <div class="case-block">
+            <h4>
+              <span data-i18n="offload_llm_label">LLM (after offload)</span>
+              <!-- <span class="pill pill-ok">completed_response</span> -->
+            </h4>
+            <div class="case-stream" id="case-offload-llm"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="resources">
+      <div class="section-inner reveal">
+        <p class="section-label" data-i18n="resources_label">Resources</p>
+        <h2 class="section-title" data-i18n="resources_title">Paper, data, and one-click reproduce</h2>
+        <ul class="resource-list">
+          <li>
+            <a href="https://pyromind.ai/">
+              PyroMind Console
+              <span data-i18n="res_console">One-click evaluation</span>
+            </a>
+          </li>
+          <li>
+            <a href="https://huggingface.co/datasets/pyromind/easyhard-24k">
+              EasyHard-24K
+              <span data-i18n="res_dataset">Training dataset on Hugging Face</span>
+            </a>
+          </li>
+          <li>
+            <a href="https://huggingface.co/pyromind">
+              Hugging Face · pyromind
+              <span data-i18n="res_hf">Models &amp; datasets</span>
+            </a>
+          </li>
+          <li>
+            <a href="https://github.com/PyroMind-Dynamics/pyroDash-evaluate">
+              pyroDash-evaluate
+              <span data-i18n="res_eval">Math evaluation code</span>
+            </a>
+          </li>
+        </ul>
+
+        <h3 class="section-title" style="font-size:1.35rem;margin-top:3rem" data-i18n="cite_title">Citation</h3>
+        <div class="cite-block">
+          <button type="button" class="copy-btn" id="copy-cite" data-i18n="copy">Copy</button>
+          <pre id="cite-text">@misc{pyrodash2026,
+  title        = {PyroDash: Cost-Efficient Token-Level Small-Large Model Collaborative Inference},
+  author       = {{PyroMind Dynamics}},
+  year         = {2026},
+  note         = {Preprint}
+}</pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="section-inner">
+      <p data-i18n="footer">© 2026 PyroMind Dynamics · PyroDash</p>
+      <p><a href="https://pyromind.ai/">pyromind.ai</a></p>
+    </div>
+  </footer>
+
+  <script src="js/main.js" defer></script>
+</body>
+</html>

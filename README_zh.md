@@ -2,11 +2,11 @@
 
 **Language / 语言:** [English](README.md) | [中文](README_zh.md)
 
-<a href="TODO_PAPER_URL"><img src="https://img.shields.io/badge/📄%20Paper-Coming%20Soon-lightgrey"/></a>&nbsp;&nbsp;<a href="TODO_MODEL_URL"><img src="https://img.shields.io/badge/🤗%20Model-Coming%20Soon-yellow"/></a>&nbsp;&nbsp;<a href="TODO_REPRODUCE_URL"><img src="https://img.shields.io/badge/🚀%20Quick%20Reproduce-PyroMind-orange"/></a>
+<a href="https://PyroMind-Dynamics.github.io/pyroDash-evaluate/"><img src="https://img.shields.io/badge/🌐%20Website-GitHub%20Pages-blue"/></a>&nbsp;&nbsp;<a href="#-citation"><img src="https://img.shields.io/badge/📄%20Paper-Preprint-blue"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/datasets/pyromind/easyhard-24k"><img src="https://img.shields.io/badge/🤗%20Dataset-EasyHard--24K-yellow"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/pyromind"><img src="https://img.shields.io/badge/🤗%20HuggingFace-pyromind-yellow"/></a>&nbsp;&nbsp;<a href="https://pyromind.ai/"><img src="https://img.shields.io/badge/🚀%20Quick%20Reproduce-PyroMind-orange"/></a>
 
 ---
 
-> **一键复现：** 点击 [🚀 Quick Reproduce](TODO_REPRODUCE_URL)，进入公司平台即可端到端快速复现评测。
+> **一键复现：** 打开 [PyroMind Console](https://pyromind.ai/)，即可端到端快速复现评测。训练数据见 Hugging Face：[EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k)。
 
 <table>
 <tr>
@@ -15,9 +15,13 @@
 </td>
 <td width="50%" valign="top">
 
+我们提出 **PyroDash**，一种面向小模型与大模型协同推理的 Token 级动态推理范式。小模型在自回归流式解码中自行输出控制符 `<|llm_offload|>`，协同引擎据此将局部推理链一次性转交大模型补全。无需外接 Router 模型，亦无需重训练大模型，并兼容闭源大模型服务。
+
 </td>
 </tr>
 </table>
+
+训练上，PyroDash 采用三阶段渐进式优化管线：（1）训练控制符嵌入层，使小模型具备基本的 offload 表达能力；（2）冷启动 offload 能力，建立大小模型协作模式；（3）以 GRPO 强化学习联合优化动态 offload 策略，结合任务准确率奖励与大模型调用成本惩罚，在推理质量与算力成本之间取得自适应平衡。更多细节请见下方论文引用。
 
 ---
 
@@ -64,5 +68,38 @@ Tokenizer 必须包含特殊 token `<|llm_offload|>`。
 
 ---
 
+## 🔗 相关资源
+
+| 资源 | 链接 |
+|------|------|
+| 项目官网 | [PyroMind-Dynamics.github.io/pyroDash-evaluate](https://PyroMind-Dynamics.github.io/pyroDash-evaluate/) |
+| 论文 | Preprint — 见 [Citation](#-citation) |
+| 数据集（EasyHard-24K） | [huggingface.co/datasets/pyromind/easyhard-24k](https://huggingface.co/datasets/pyromind/easyhard-24k) |
+| Hugging Face 组织 | [huggingface.co/pyromind](https://huggingface.co/pyromind) |
+| PyroMind Console | [pyromind.ai](https://pyromind.ai/) |
+
+---
+
 ## 📖 Citation
 
+如果本工作对你有帮助，请引用：
+
+```bibtex
+@misc{pyrodash2026,
+  title        = {PyroDash: Cost-Efficient Token-Level Small-Large Model Collaborative Inference},
+  author       = {{PyroMind Dynamics}},
+  year         = {2026},
+  note         = {Preprint}
+}
+```
+
+数据集：
+
+```bibtex
+@misc{pyromind2026easyhard24k,
+  title        = {{EasyHard-24K} v0.02},
+  author       = {{PyroMind Dynamics}},
+  year         = {2026},
+  howpublished = {\url{https://huggingface.co/datasets/pyromind/easyhard-24k}}
+}
+```
