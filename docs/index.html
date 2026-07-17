@@ -43,37 +43,41 @@
         <h1 class="hero-title" data-i18n="hero_title">Small models ask for help — only when it counts.</h1>
         <p class="hero-lead" data-i18n="hero_lead">Token-level offload with &lt;|llm_offload|&gt;. Near LLM quality, a fraction of the cloud bill.</p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://pyromind.ai/" data-i18n="cta_reproduce">Reproduce on PyroMind</a>
-          <a class="btn btn-ghost" href="https://github.com/PyroMind-Dynamics/pyroDash-evaluate" data-i18n="cta_github">View on GitHub</a>
+          <a class="btn btn-primary" href="https://github.com/PyroMind-Dynamics/pyroDash-evaluate" data-i18n="cta_github">View on GitHub</a>
+          <a class="btn btn-ghost" href="https://huggingface.co/pyromind" data-i18n="cta_hf">Hugging Face · pyromind</a>
+          <a class="btn btn-ghost" href="https://pyromind.ai/" data-i18n="cta_pyromind">PyroMind Console</a>
         </div>
-      </div>
-      <div class="hero-visual">
-        <div class="hero-glow" aria-hidden="true"></div>
-        <img src="assets/fig_inference_architecture.png" alt="PyroDash inference architecture" width="880" height="1216" />
       </div>
     </header>
 
     <section class="section" id="method">
       <div class="section-inner reveal">
-        <p class="section-label" data-i18n="method_label">How it works</p>
-        <h2 class="section-title" data-i18n="method_title">Introspective routing inside the generation stream</h2>
-        <p class="section-desc" data-i18n="method_desc">No external router. No LLM retraining. The small model decides mid-reasoning when to hand off — then a frozen large model completes the chain in one shot.</p>
+        <div class="method-grid">
+          <div class="method-copy">
+            <p class="section-label" data-i18n="method_label">How it works</p>
+            <h2 class="section-title" data-i18n="method_title">Introspective routing inside the generation stream</h2>
+            <p class="section-desc" data-i18n="method_desc">No external router. No LLM retraining. The small model decides mid-reasoning when to hand off — then a frozen large model completes the chain in one shot.</p>
 
-        <div class="pipeline">
-          <article class="pipeline-step">
-            <h3 data-i18n="stage1_title">Control-token embedding</h3>
-            <p data-i18n="stage1_desc">Extend the vocabulary and initialize &lt;|llm_offload|&gt; so the SLM can express offload intent.</p>
-          </article>
-          <article class="pipeline-step">
-            <h3 data-i18n="stage2_title">Offload cold-start</h3>
-            <p data-i18n="stage2_desc">SFT teaches when and how to emit the control token on hard steps while keeping easy steps local.</p>
-          </article>
-          <article class="pipeline-step">
-            <h3 data-i18n="stage3_title">GRPO with cost penalty</h3>
-            <p data-i18n="stage3_desc">Jointly optimize task accuracy and large-model call cost for an adaptive quality–cost frontier.</p>
-          </article>
+            <div class="pipeline">
+              <article class="pipeline-step">
+                <h3 data-i18n="stage1_title">Control-token embedding</h3>
+                <p data-i18n="stage1_desc">Extend the vocabulary and initialize &lt;|llm_offload|&gt; so the SLM can express offload intent.</p>
+              </article>
+              <article class="pipeline-step">
+                <h3 data-i18n="stage2_title">Offload cold-start</h3>
+                <p data-i18n="stage2_desc">SFT teaches when and how to emit the control token on hard steps while keeping easy steps local.</p>
+              </article>
+              <article class="pipeline-step">
+                <h3 data-i18n="stage3_title">GRPO with cost penalty</h3>
+                <p data-i18n="stage3_desc">Jointly optimize task accuracy and large-model call cost for an adaptive quality–cost frontier.</p>
+              </article>
+            </div>
+          </div>
+
+          <div class="method-visual" aria-hidden="true">
+            <img src="assets/fig_inference_architecture.png" alt="PyroDash inference architecture" width="880" height="1216" loading="lazy" />
+          </div>
         </div>
-        <code class="token-chip">&lt;|llm_offload|&gt;</code>
       </div>
     </section>
 
@@ -168,48 +172,63 @@
         <h2 class="section-title" data-i18n="cases_title">Where the small model gets stuck — and asks</h2>
         <p class="section-desc" data-i18n="cases_desc">Same problem: SLM-only vs. PyroDash relay. Watch the control token fire, then the large model finish the chain.</p>
 
+        <div class="case-legend">
+          <span class="legend-item legend-qwen"><i></i><span data-i18n="legend_qwen">Qwen3.5-4B</span></span>
+          <span class="legend-item legend-glm"><i></i><span data-i18n="legend_glm">GLM-5.2</span></span>
+          <span class="legend-item legend-slm"><i></i><span data-i18n="legend_slm">Offload · SLM</span></span>
+          <span class="legend-item legend-llm"><i></i><span data-i18n="legend_llm">Offload · LLM</span></span>
+          <span class="legend-item legend-token"><i></i><span data-i18n="legend_token">&lt;|llm_offload|&gt;</span></span>
+        </div>
+
         <div class="case-tabs" role="tablist" id="case-tabs" aria-label="Cases"></div>
-        <div class="case-panel" id="case-panel">
-          <div class="case-block case-block-full">
-            <h3 id="case-dataset"></h3>
-            <h4 data-i18n="q_label">Question</h4>
-            <div class="case-stream case-stream-q" id="case-question"></div>
-          </div>
 
-          <div class="case-block case-block-full">
-            <h4 data-i18n="gt_label">Answer</h4>
-            <p class="case-answer" id="case-answer"></p>
+        <div class="case-prompt">
+          <h3 id="case-title"></h3>
+          <div class="case-prompt-grid">
+            <div class="case-block case-block-compact">
+              <h4 data-i18n="q_label">Question</h4>
+              <div class="case-stream case-stream-q" id="case-question"></div>
+            </div>
+            <div class="case-block case-block-compact">
+              <h4 data-i18n="gt_label">Answer</h4>
+              <p class="case-answer" id="case-answer"></p>
+            </div>
           </div>
+        </div>
 
-          <div class="case-block case-block-full">
-            <h4>
-              <span data-i18n="alone_label">SLM response</span>
-              <!-- <span class="pill pill-muted" data-i18n="alone_hint">initial_response</span> -->
-            </h4>
-            <div class="case-stream" id="case-slm"></div>
-          </div>
+        <div class="case-layout">
+          <aside class="case-sidebar" aria-label="Model results">
+            <p class="case-sidebar-title" data-i18n="sidebar_model_title">Model</p>
+            <ul class="case-sidebar-list" id="model-sidebar">
+              <li>
+                <button type="button" class="case-sidebar-item model-qwen" data-model="qwen" aria-current="true">
+                  <strong>Qwen</strong>
+                  <span data-i18n="legend_qwen">Qwen3.5-4B</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="case-sidebar-item model-glm" data-model="glm">
+                  <strong>GLM</strong>
+                  <span data-i18n="legend_glm">GLM-5.2</span>
+                </button>
+              </li>
+              <li>
+                <button type="button" class="case-sidebar-item model-offload" data-model="offload">
+                  <strong>Offload</strong>
+                  <span data-i18n="offload_label">SLM + LLM relay</span>
+                </button>
+              </li>
+            </ul>
+          </aside>
 
-          <div class="case-block case-block-full">
-            <h4>
-              <span data-i18n="offload_label">Offload relay</span>
-              <!-- <span class="pill pill-ok" data-i18n="relay_hint">relay_response</span> -->
-            </h4>
-          </div>
-
-          <div class="case-block">
-            <h4>
-              <span data-i18n="offload_slm_label">SLM (before offload)</span>
-              <!-- <span class="pill pill-ember">raw_response</span> -->
-            </h4>
-            <div class="case-stream" id="case-offload-slm"></div>
-          </div>
-
-          <div class="case-block">
-            <h4>
-              <span data-i18n="offload_llm_label">LLM (after offload)</span>
-              <!-- <span class="pill pill-ok">completed_response</span> -->
-            </h4>
-            <div class="case-stream" id="case-offload-llm"></div>
+          <div class="case-main" id="case-main">
+            <div class="case-block case-block-result">
+              <h4 id="case-result-label">
+                <span class="result-tag tag-qwen" id="case-result-tag">Qwen</span>
+                <span id="case-result-title" data-i18n="qwen_label">Qwen response</span>
+              </h4>
+              <div class="case-stream" id="case-result"></div>
+            </div>
           </div>
         </div>
       </div>

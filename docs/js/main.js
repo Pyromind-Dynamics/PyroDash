@@ -9,6 +9,8 @@
       hero_title: "Small models ask for help — only when it counts.",
       hero_lead:
         "Token-level offload with <|llm_offload|>. Near LLM quality, a fraction of the cloud bill.",
+      cta_hf: "Hugging Face · pyromind",
+      cta_pyromind: "PyroMind Console",
       cta_reproduce: "Reproduce on PyroMind",
       cta_github: "View on GitHub",
       method_label: "How it works",
@@ -37,15 +39,21 @@
       cases_label: "Case study",
       cases_title: "Where the small model gets stuck — and asks",
       cases_desc:
-        "Question, ground-truth answer, SLM-only response, then the offload path: SLM raw_response + LLM completed_response.",
+        "Six benchmark cases: Qwen-only, GLM-only, and PyroDash offload (SLM + LLM stitched). Pick a case from the sidebar.",
+      sidebar_title: "Cases",
+      sidebar_model_title: "Model",
       q_label: "Question",
       gt_label: "Answer",
-      alone_label: "SLM response",
-      alone_hint: "initial_response",
-      offload_label: "Offload relay",
-      relay_hint: "relay_response",
-      offload_slm_label: "SLM (before offload)",
-      offload_llm_label: "LLM (after offload)",
+      qwen_label: "Qwen response",
+      glm_label: "GLM response",
+      offload_label: "Offload relay (SLM + LLM)",
+      legend_qwen: "Qwen3.5-4B",
+      legend_glm: "GLM-5.2",
+      legend_slm: "Offload · SLM",
+      legend_llm: "Offload · LLM",
+      legend_token: "<|llm_offload|>",
+      badge_offload: "with offload",
+      badge_noffload: "no offload",
       resources_label: "Resources",
       resources_title: "Paper, data, and one-click reproduce",
       res_console: "One-click evaluation",
@@ -67,6 +75,8 @@
       hero_title: "小模型只在关键时刻向大模型求助。",
       hero_lead:
         "通过 <|llm_offload|> 做 Token 级 offload：质量逼近纯大模型，云端账单大幅下降。",
+      cta_hf: "Hugging Face · pyromind",
+      cta_pyromind: "PyroMind 控制台",
       cta_reproduce: "在 PyroMind 一键复现",
       cta_github: "查看 GitHub",
       method_label: "工作原理",
@@ -92,15 +102,21 @@
       cases_label: "案例",
       cases_title: "小模型卡住的地方——以及它如何求助",
       cases_desc:
-        "展示 Question、标准答案、仅小模型回复，以及 offload 路径下的 SLM raw_response 与 LLM completed_response。",
+        "六个 benchmark 案例：Qwen 独立回复、GLM 独立回复，以及 PyroDash offload 拼接（SLM + LLM）。点击侧边栏切换案例。",
+      sidebar_title: "案例列表",
+      sidebar_model_title: "模型结果",
       q_label: "Question",
       gt_label: "Answer",
-      alone_label: "SLM response",
-      alone_hint: "initial_response",
-      offload_label: "Offload relay",
-      relay_hint: "relay_response",
-      offload_slm_label: "SLM（offload 前）",
-      offload_llm_label: "LLM（offload 后）",
+      qwen_label: "Qwen 回复",
+      glm_label: "GLM 回复",
+      offload_label: "Offload 接力（SLM + LLM）",
+      legend_qwen: "Qwen3.5-4B",
+      legend_glm: "GLM-5.2",
+      legend_slm: "Offload · SLM",
+      legend_llm: "Offload · LLM",
+      legend_token: "<|llm_offload|>",
+      badge_offload: "含 offload",
+      badge_noffload: "无 offload",
       resources_label: "相关资源",
       resources_title: "论文、数据与一键复现",
       res_console: "一键评测",
@@ -116,9 +132,20 @@
   };
 
   const OFFLOAD = "<|llm_offload|>";
+  const CASE_KEYS = [
+    "relay-off-r__glm-r__sft-f__qwen-f",
+    "relay-noff-r__glm-r__sft-r__qwen-r",
+  ];
   let lang = localStorage.getItem("pyrodash-lang") || "en";
   let cases = [];
   let activeCase = 0;
+  let activeModel = "qwen";
+
+  const MODEL_META = {
+    qwen: { tag: "Qwen", tagClass: "tag-qwen", streamClass: "stream-qwen", titleKey: "qwen_label" },
+    glm: { tag: "GLM", tagClass: "tag-glm", streamClass: "stream-glm", titleKey: "glm_label" },
+    offload: { tag: "Offload", tagClass: "tag-offload", streamClass: "stream-offload", titleKey: "offload_label" },
+  };
 
   function applyI18n() {
     const dict = I18N[lang] || I18N.en;
@@ -138,17 +165,93 @@
       .replace(/>/g, "&gt;");
   }
 
-  function formatResponse(text) {
+  function formatText(text) {
     let html = escapeHtml(text);
     html = html.replace(
-      /&lt;\|llm_offload\|&gt;/g,
-      '<span class="offload">&lt;|llm_offload|&gt;</span>'
-    );
-    html = html.replace(
-      /&lt;(\/?think)&gt;/gi,
+      /&lt;(\/?redacted_thinking|think)&gt;/gi,
       '<span class="think-tag">&lt;$1&gt;</span>'
     );
     return html;
+  }
+
+  function highlightToken(text) {
+    const parts = text.split(OFFLOAD);
+    if (parts.length === 1) return formatText(text);
+    return parts
+      .map((part, i) => {
+        const chunk = formatText(part);
+        return i < parts.length - 1
+          ? `${chunk}<span class="offload-token">${escapeHtml(OFFLOAD)}</span>`
+          : chunk;
+      })
+      .join("");
+  }
+
+  function getLlmContinuation(raw, completed) {
+    if (!completed) return "";
+    if (!raw || raw === completed) return "";
+    if (!raw.includes(OFFLOAD)) return "";
+
+    const slmBody = raw.replace(OFFLOAD, "").trim();
+    const compBody = completed.replace(/^<think>/i, "");
+    const idx = compBody.indexOf(slmBody);
+    if (idx >= 0) return compBody.slice(idx + slmBody.length);
+
+    const tail = slmBody.slice(-100);
+    const tailIdx = completed.indexOf(tail);
+    if (tailIdx >= 0) return completed.slice(tailIdx + tail.length);
+    return completed;
+  }
+
+  function buildOffloadHtml(relay) {
+    const raw = relay?.raw_response || "";
+    const completed = relay?.completed_response || "";
+    if (!raw && !completed) return "";
+
+    if (!raw.includes(OFFLOAD)) {
+      return `<span class="seg-slm">${highlightToken(completed || raw)}</span>`;
+    }
+
+    const llmPart = getLlmContinuation(raw, completed);
+    return `<span class="seg-slm">${highlightToken(raw)}</span><span class="seg-llm">${formatText(llmPart)}</span>`;
+  }
+
+  function flattenCases(data) {
+    const list = [];
+    CASE_KEYS.forEach((key) => {
+      (data[key] || []).forEach((item) => {
+        list.push({
+          ...item,
+          category: key,
+          hasOffload: key.includes("relay-off-r"),
+        });
+      });
+    });
+    return list;
+  }
+
+  function renderModelResult() {
+    const c = cases[activeCase];
+    if (!c) return;
+
+    const dict = I18N[lang] || I18N.en;
+    const meta = MODEL_META[activeModel];
+    const resultEl = document.getElementById("case-result");
+    const tagEl = document.getElementById("case-result-tag");
+    const titleEl = document.getElementById("case-result-title");
+
+    tagEl.textContent = meta.tag;
+    tagEl.className = `result-tag ${meta.tagClass}`;
+    titleEl.textContent = dict[meta.titleKey] || meta.titleKey;
+    resultEl.className = `case-stream ${meta.streamClass}`;
+
+    if (activeModel === "qwen") {
+      resultEl.innerHTML = formatText(c.qwen_response?.completed_response || "");
+    } else if (activeModel === "glm") {
+      resultEl.innerHTML = formatText(c.glm_response?.completed_response || "");
+    } else {
+      resultEl.innerHTML = buildOffloadHtml(c.relay_response);
+    }
   }
 
   function renderCase(i) {
@@ -160,41 +263,50 @@
       btn.setAttribute("aria-selected", idx === i ? "true" : "false");
     });
 
-    const slmText = c.initial_response?.completed_response || "";
-    const offloadSlm = c.relay_response?.raw_response || "";
-    const offloadLlm = c.relay_response?.completed_response || "";
-
-    document.getElementById("case-dataset").textContent =
+    document.getElementById("case-title").textContent =
       `${c.dataset || "case"} · #${c.idx ?? i}`;
     document.getElementById("case-question").textContent = c.question || "";
     document.getElementById("case-answer").textContent = c.answer || "";
-    document.getElementById("case-slm").innerHTML = formatResponse(slmText);
-    document.getElementById("case-offload-slm").innerHTML =
-      formatResponse(offloadSlm);
-    document.getElementById("case-offload-llm").innerHTML =
-      formatResponse(offloadLlm);
+    renderModelResult();
   }
 
   function buildTabs() {
     const tabs = document.getElementById("case-tabs");
+    const dict = I18N[lang] || I18N.en;
     tabs.innerHTML = "";
     cases.forEach((c, i) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "case-tab";
       btn.setAttribute("role", "tab");
-      btn.textContent = `${c.dataset || "case"} #${c.idx ?? i}`;
+      btn.setAttribute("aria-selected", i === activeCase ? "true" : "false");
+      const badge = c.hasOffload ? dict.badge_offload : dict.badge_noffload;
+      btn.textContent = `${c.dataset || "case"} #${c.idx ?? i} · ${badge}`;
       btn.addEventListener("click", () => renderCase(i));
       tabs.appendChild(btn);
     });
   }
 
+  function setupModelSidebar() {
+    document.querySelectorAll(".case-sidebar-item[data-model]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        activeModel = btn.getAttribute("data-model");
+        document.querySelectorAll(".case-sidebar-item[data-model]").forEach((b) => {
+          b.setAttribute("aria-current", b === btn ? "true" : "false");
+        });
+        renderModelResult();
+      });
+    });
+  }
+
   async function loadCases() {
     try {
-      const res = await fetch("data/case.json");
-      cases = await res.json();
-      if (!Array.isArray(cases) || !cases.length) return;
+      const res = await fetch("data/case_0.json");
+      const data = await res.json();
+      cases = flattenCases(data);
+      if (!cases.length) return;
       buildTabs();
+      setupModelSidebar();
       renderCase(0);
     } catch (err) {
       console.warn("Failed to load cases", err);
@@ -236,6 +348,8 @@
       lang = lang === "en" ? "zh" : "en";
       localStorage.setItem("pyrodash-lang", lang);
       applyI18n();
+      buildTabs();
+      renderModelResult();
     });
   }
 
