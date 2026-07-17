@@ -1,5 +1,4 @@
-[
-  {
+[ {
     "dataset": "olympiad",
     "idx": 141,
     "question": "The Sieve of Sundaram uses the following infinite table of positive integers:\n\n| 4 | 7 | 10 | 13 | $\\cdots$ |\n| :---: | :---: | :---: | :---: | :---: |\n| 7 | 12 | 17 | 22 | $\\cdots$ |\n| 10 | 17 | 24 | 31 | $\\cdots$ |\n| 13 | 22 | 31 | 40 | $\\cdots$ |\n| $\\vdots$ | $\\vdots$ | $\\vdots$ | $\\vdots$ |  |\n\nThe numbers in each row in the table form an arithmetic sequence. The numbers in each column in the table form an arithmetic sequence. The first four entries in each of the first four rows and columns are shown.\nDetermine the number in the 50th row and 40th column.",

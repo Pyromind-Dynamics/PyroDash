@@ -134,6 +134,8 @@
   const OFFLOAD = "<|llm_offload|>";
   const CASE_KEYS = [
     "relay-off-r__glm-r__sft-f__qwen-f",
+    "relay-off-r__glm-f__sft-f__qwen-f",
+    "relay-off-r__glm-f__sft-r__qwen-f",
     "relay-noff-r__glm-r__sft-r__qwen-r",
   ];
   let lang = localStorage.getItem("pyrodash-lang") || "en";
@@ -216,6 +218,67 @@
     return `<span class="seg-slm">${highlightToken(raw)}</span><span class="seg-llm">${formatText(llmPart)}</span>`;
   }
 
+  function extractLastBoxed(text) {
+    const src = String(text || "");
+    let last = null;
+    const marker = "\\boxed{";
+    let i = 0;
+    while (i < src.length) {
+      const start = src.indexOf(marker, i);
+      if (start < 0) break;
+      let depth = 0;
+      let j = start + marker.length - 1;
+      for (; j < src.length; j++) {
+        const ch = src[j];
+        if (ch === "{") depth += 1;
+        else if (ch === "}") {
+          depth -= 1;
+          if (depth === 0) {
+            last = src.slice(start + marker.length, j);
+            break;
+          }
+        }
+      }
+      i = start + marker.length;
+    }
+    return last;
+  }
+
+  function normalizeAnswer(text) {
+    return String(text || "")
+      .replace(/\$+/g, "")
+      .replace(/\\left|\\right/g, "")
+      .replace(/\\,/g, "")
+      .replace(/\\ /g, "")
+      .replace(/[{}]/g, "")
+      .replace(/\s+/g, "")
+      .replace(/,/g, "")
+      .toLowerCase();
+  }
+
+  function answersMatch(pred, gt) {
+    if (pred == null || pred === "") return false;
+    const a = normalizeAnswer(pred);
+    const b = normalizeAnswer(gt);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const na = Number(a);
+    const nb = Number(b);
+    return Number.isFinite(na) && Number.isFinite(nb) && na === nb;
+  }
+
+  function computeVerdicts(item) {
+    const gt = extractLastBoxed(item.answer) || item.answer;
+    const qwenPred = extractLastBoxed(item.qwen_response?.completed_response);
+    const glmPred = extractLastBoxed(item.glm_response?.completed_response);
+    const relayPred = extractLastBoxed(item.relay_response?.completed_response);
+    return {
+      qwen: answersMatch(qwenPred, gt),
+      glm: answersMatch(glmPred, gt),
+      offload: answersMatch(relayPred, gt),
+    };
+  }
+
   function flattenCases(data) {
     const list = [];
     CASE_KEYS.forEach((key) => {
@@ -223,11 +286,25 @@
         list.push({
           ...item,
           category: key,
-          hasOffload: key.includes("relay-off-r"),
+          hasOffload: key.includes("relay-off"),
+          verdicts: computeVerdicts(item),
         });
       });
     });
     return list;
+  }
+
+  function updateModelVerdictUI(c) {
+    const verdicts = c?.verdicts || {};
+    document.querySelectorAll(".case-sidebar-item[data-model]").forEach((btn) => {
+      const model = btn.getAttribute("data-model");
+      const ok = verdicts[model];
+      btn.classList.toggle("is-wrong", ok === false);
+      btn.classList.toggle("is-correct", ok === true);
+      btn.removeAttribute("data-verdict");
+      if (ok === true) btn.setAttribute("data-verdict", "correct");
+      if (ok === false) btn.setAttribute("data-verdict", "wrong");
+    });
   }
 
   function renderModelResult() {
@@ -239,11 +316,19 @@
     const resultEl = document.getElementById("case-result");
     const tagEl = document.getElementById("case-result-tag");
     const titleEl = document.getElementById("case-result-title");
+    const wrong = c.verdicts?.[activeModel] === false;
+    const correct = c.verdicts?.[activeModel] === true;
+    const verdictClass = wrong ? " is-wrong" : correct ? " is-correct" : "";
+    const labelEl = document.getElementById("case-result-label");
 
     tagEl.textContent = meta.tag;
-    tagEl.className = `result-tag ${meta.tagClass}`;
+    tagEl.className = `result-tag ${meta.tagClass}${verdictClass}`;
     titleEl.textContent = dict[meta.titleKey] || meta.titleKey;
+    if (labelEl) labelEl.className = verdictClass.trim();
+    // Bottom stream keeps model accent colors (no verdict class)
     resultEl.className = `case-stream ${meta.streamClass}`;
+
+    updateModelVerdictUI(c);
 
     if (activeModel === "qwen") {
       resultEl.innerHTML = formatText(c.qwen_response?.completed_response || "");

@@ -678,6 +678,25 @@ table.results tr.is-best td {
   background: var(--offload-token-bg);
 }
 
+/* Verdict colors only on the active (clicked) model: correct=green, wrong=red */
+.case-sidebar-item.is-correct[aria-current="true"],
+.case-sidebar-item.model-qwen.is-correct[aria-current="true"],
+.case-sidebar-item.model-glm.is-correct[aria-current="true"],
+.case-sidebar-item.model-offload.is-correct[aria-current="true"] {
+  border-color: var(--ok);
+  background: rgba(62, 207, 142, 0.14);
+  color: var(--ink);
+}
+
+.case-sidebar-item.is-wrong[aria-current="true"],
+.case-sidebar-item.model-qwen.is-wrong[aria-current="true"],
+.case-sidebar-item.model-glm.is-wrong[aria-current="true"],
+.case-sidebar-item.model-offload.is-wrong[aria-current="true"] {
+  border-color: var(--bad);
+  background: rgba(255, 107, 122, 0.14);
+  color: var(--ink);
+}
+
 .case-sidebar-item strong {
   display: block;
   font-size: 0.88rem;
@@ -722,6 +741,30 @@ table.results tr.is-best td {
   font-weight: 600;
 }
 
+#case-result-label {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+#case-result-label.is-correct {
+  border-color: var(--ok);
+  background: rgba(62, 207, 142, 0.14);
+  color: var(--ok);
+}
+
+#case-result-label.is-wrong {
+  border-color: var(--bad);
+  background: rgba(255, 107, 122, 0.14);
+  color: var(--bad);
+}
+
 .result-tag {
   display: inline-block;
   padding: 0.12rem 0.45rem;
@@ -747,6 +790,16 @@ table.results tr.is-best td {
   background: var(--offload-token-bg);
 }
 
+.result-tag.is-wrong {
+  color: #fff;
+  background: var(--bad);
+}
+
+.result-tag.is-correct {
+  color: #0a0e14;
+  background: var(--ok);
+}
+
 .case-answer {
   margin: 0;
   font-family: var(--font-mono);
@@ -755,7 +808,7 @@ table.results tr.is-best td {
   padding: 0.85rem 1rem;
   background: var(--bg-elevated);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--ember);
+  border-left: 3px solid var(--ok);
   word-break: break-word;
 }
 
