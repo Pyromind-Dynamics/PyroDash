@@ -7,7 +7,7 @@
   <meta name="description" content="PyroDash: small models emit &lt;|llm_offload|&gt; to hand off hard reasoning to large models — quality near LLM-only, cost far lower." />
   <meta property="og:title" content="PyroDash" />
   <meta property="og:description" content="Token-level collaborative inference between small and large language models." />
-  <meta property="og:image" content="assets/fig_inference_architecture.png" />
+  <meta property="og:image" content="assets/inference.png" />
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png" />
   <link rel="icon" type="image/png" sizes="64x64" href="assets/favicon-64.png" />
   <link rel="shortcut icon" type="image/png" href="assets/favicon.png" />
@@ -52,30 +52,72 @@
 
     <section class="section" id="method">
       <div class="section-inner reveal">
-        <div class="method-grid">
-          <div class="method-copy">
-            <p class="section-label" data-i18n="method_label">How it works</p>
-            <h2 class="section-title" data-i18n="method_title">Introspective routing inside the generation stream</h2>
-            <p class="section-desc" data-i18n="method_desc">No external router. No LLM retraining. The small model decides mid-reasoning when to hand off — then a frozen large model completes the chain in one shot.</p>
+        <p class="section-label" data-i18n="method_label">How it works</p>
+        <h2 class="section-title" data-i18n="method_title">Train the small model to ask — then stitch the stream</h2>
+        <p class="section-desc" data-i18n="method_desc">No external router. No LLM retraining. Progressive training teaches Ms when to emit &lt;|llm_offload|&gt;; at inference, the Collaborate Engine suspends, relays, and merges the two streams.</p>
 
-            <div class="pipeline">
-              <article class="pipeline-step">
-                <h3 data-i18n="stage1_title">Control-token embedding</h3>
-                <p data-i18n="stage1_desc">Extend the vocabulary and initialize &lt;|llm_offload|&gt; so the SLM can express offload intent.</p>
-              </article>
-              <article class="pipeline-step">
-                <h3 data-i18n="stage2_title">Offload cold-start</h3>
-                <p data-i18n="stage2_desc">SFT teaches when and how to emit the control token on hard steps while keeping easy steps local.</p>
-              </article>
-              <article class="pipeline-step">
-                <h3 data-i18n="stage3_title">GRPO with cost penalty</h3>
-                <p data-i18n="stage3_desc">Jointly optimize task accuracy and large-model call cost for an adaptive quality–cost frontier.</p>
-              </article>
+        <div class="method-tabs" role="tablist" aria-label="Method views">
+          <button type="button" class="method-tab" role="tab" id="method-tab-training" data-method="training" aria-selected="true" aria-controls="method-panel-training" data-i18n="tab_training">Training</button>
+          <button type="button" class="method-tab" role="tab" id="method-tab-inference" data-method="inference" aria-selected="false" aria-controls="method-panel-inference" data-i18n="tab_inference">Inference</button>
+        </div>
+
+        <div class="method-panels">
+          <div class="method-panel" role="tabpanel" id="method-panel-training" aria-labelledby="method-tab-training" data-method="training">
+            <div class="method-row">
+              <div class="method-copy">
+                <h3 class="method-subtitle" data-i18n="training_title">Three-stage progressive training</h3>
+                <p class="method-subdesc" data-i18n="training_desc">Data prep filters easy/hard samples and inserts control tags. Then: embed τ_off, cold-start offload SFT, and GRPO with a cost-aware reward.</p>
+
+                <div class="pipeline">
+                  <article class="pipeline-step">
+                    <h3 data-i18n="stage1_title">Control-token embedding</h3>
+                    <p data-i18n="stage1_desc">LoRA on embed_tokens + lm_head, then keep only the τ_off embedding row so Ms can express offload intent.</p>
+                  </article>
+                  <article class="pipeline-step">
+                    <h3 data-i18n="stage2_title">Offload cold-start</h3>
+                    <p data-i18n="stage2_desc">Offload SFT teaches when and how to emit &lt;|llm_offload|&gt; on hard steps while keeping easy steps local.</p>
+                  </article>
+                  <article class="pipeline-step">
+                    <h3 data-i18n="stage3_title">GRPO enhancement</h3>
+                    <p data-i18n="stage3_desc">With Ml frozen, optimize R = R_accuracy − λ · R_efficiency so quality and cloud cost move together.</p>
+                  </article>
+                </div>
+              </div>
+
+              <figure class="figure-block method-figure">
+                <img src="assets/training.png" alt="Three-stage progressive training pipeline" width="1536" height="1024" loading="lazy" />
+                <figcaption class="figure-caption" data-i18n="training_caption">Data preparation → embedding-layer train → offload SFT → GRPO → trained Ms.</figcaption>
+              </figure>
             </div>
           </div>
 
-          <div class="method-visual" aria-hidden="true">
-            <img src="assets/fig_inference_architecture.png" alt="PyroDash inference architecture" width="880" height="1216" loading="lazy" />
+          <div class="method-panel" role="tabpanel" id="method-panel-inference" aria-labelledby="method-tab-inference" data-method="inference" hidden>
+            <div class="method-row">
+              <div class="method-copy">
+                <h3 class="method-subtitle" data-i18n="inference_title">Collaborative inference architecture</h3>
+                <p class="method-subdesc" data-i18n="inference_desc">Ms (Qwen3.5-4B / vLLM) streams until τ_off. The engine packs Cs, one-shot relays to frozen Ml (GLM-5.2), then returns the stitched stream Os ‖ OL.</p>
+
+                <div class="inference-points">
+                  <article class="inference-point">
+                    <h4 data-i18n="inf1_title">Collaborate Engine</h4>
+                    <p data-i18n="inf1_desc">State machine · stream merge · offload detect — the only place that stitches the two sides.</p>
+                  </article>
+                  <article class="inference-point">
+                    <h4 data-i18n="inf2_title">Token-level self-routing</h4>
+                    <p data-i18n="inf2_desc">On τ_off: suspend Ms, Pack(Cs), then one-shot relay q + Cs to the large-model API.</p>
+                  </article>
+                  <article class="inference-point">
+                    <h4 data-i18n="inf3_title">Stitched stream</h4>
+                    <p data-i18n="inf3_desc">User sees one continuous answer: small-model prefix plus large-model completion.</p>
+                  </article>
+                </div>
+              </div>
+
+              <figure class="figure-block method-figure">
+                <img src="assets/inference.png" alt="Collaborative inference architecture" width="3224" height="1952" loading="lazy" />
+                <figcaption class="figure-caption" data-i18n="inference_caption">User ↔ Collaborate Engine ↔ Ms / Ml, with token-level offload and stream merge.</figcaption>
+              </figure>
+            </div>
           </div>
         </div>
       </div>

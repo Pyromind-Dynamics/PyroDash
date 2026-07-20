@@ -14,18 +14,39 @@
       cta_reproduce: "Reproduce on PyroMind",
       cta_github: "View on GitHub",
       method_label: "How it works",
-      method_title: "Introspective routing inside the generation stream",
+      method_title: "Train the small model to ask — then stitch the stream",
       method_desc:
-        "No external router. No LLM retraining. The small model decides mid-reasoning when to hand off — then a frozen large model completes the chain in one shot.",
+        "No external router. No LLM retraining. Progressive training teaches Ms when to emit <|llm_offload|>; at inference, the Collaborate Engine suspends, relays, and merges the two streams.",
+      tab_training: "Training",
+      tab_inference: "Inference",
+      training_title: "Three-stage progressive training",
+      training_desc:
+        "Data prep filters easy/hard samples and inserts control tags. Then: embed τ_off, cold-start offload SFT, and GRPO with a cost-aware reward.",
       stage1_title: "Control-token embedding",
       stage1_desc:
-        "Extend the vocabulary and initialize <|llm_offload|> so the SLM can express offload intent.",
+        "LoRA on embed_tokens + lm_head, then keep only the τ_off embedding row so Ms can express offload intent.",
       stage2_title: "Offload cold-start",
       stage2_desc:
-        "SFT teaches when and how to emit the control token on hard steps while keeping easy steps local.",
-      stage3_title: "GRPO with cost penalty",
+        "Offload SFT teaches when and how to emit <|llm_offload|> on hard steps while keeping easy steps local.",
+      stage3_title: "GRPO enhancement",
       stage3_desc:
-        "Jointly optimize task accuracy and large-model call cost for an adaptive quality–cost frontier.",
+        "With Ml frozen, optimize R = R_accuracy − λ · R_efficiency so quality and cloud cost move together.",
+      training_caption:
+        "Data preparation → embedding-layer train → offload SFT → GRPO → trained Ms.",
+      inference_title: "Collaborative inference architecture",
+      inference_desc:
+        "Ms (Qwen3.5-4B / vLLM) streams until τ_off. The engine packs Cs, one-shot relays to frozen Ml (GLM-5.2), then returns the stitched stream Os ‖ OL.",
+      inf1_title: "Collaborate Engine",
+      inf1_desc:
+        "State machine · stream merge · offload detect — the only place that stitches the two sides.",
+      inf2_title: "Token-level self-routing",
+      inf2_desc:
+        "On τ_off: suspend Ms, Pack(Cs), then one-shot relay q + Cs to the large-model API.",
+      inf3_title: "Stitched stream",
+      inf3_desc:
+        "User sees one continuous answer: small-model prefix plus large-model completion.",
+      inference_caption:
+        "User ↔ Collaborate Engine ↔ Ms / Ml, with token-level offload and stream merge.",
       results_label: "Results",
       results_title: "A tunable quality–cost Pareto frontier",
       results_desc:
@@ -80,15 +101,35 @@
       cta_reproduce: "在 PyroMind 一键复现",
       cta_github: "查看 GitHub",
       method_label: "工作原理",
-      method_title: "把路由写进生成流的内省式决策",
+      method_title: "先教会小模型求助，再在流式推理中拼接",
       method_desc:
-        "无需外接 Router，无需重训大模型。小模型在推理中途自行决定何时求助，冻结的大模型一次性补全推理链。",
+        "无需外接 Router，无需重训大模型。渐进式训练教会 Ms 何时发出 <|llm_offload|>；推理时 Collaborate Engine 负责挂起、接力与双端流拼接。",
+      tab_training: "训练",
+      tab_inference: "推理",
+      training_title: "三阶段渐进式训练",
+      training_desc:
+        "数据准备先过滤 easy/hard 并插入控制符；随后训练 τ_off 嵌入、Offload SFT 冷启动，再用带成本项的 GRPO 强化。",
       stage1_title: "控制符嵌入层训练",
-      stage1_desc: "扩展词表并初始化 <|llm_offload|>，让小模型具备 offload 表达能力。",
+      stage1_desc:
+        "对 embed_tokens + lm_head 做 LoRA，再只保留 τ_off 嵌入行，让 Ms 具备 offload 表达能力。",
       stage2_title: "Offload 冷启动",
-      stage2_desc: "SFT 教会模型在难题关键步骤输出控制符，简单题仍本地完成。",
-      stage3_title: "带成本惩罚的 GRPO",
-      stage3_desc: "联合优化任务准确率与大模型调用成本，形成可调的质量–成本前沿。",
+      stage2_desc: "Offload SFT 教会模型在难题关键步骤输出 <|llm_offload|>，简单题仍本地完成。",
+      stage3_title: "GRPO 强化",
+      stage3_desc:
+        "冻结 Ml，优化 R = R_accuracy − λ · R_efficiency，让质量与云端成本协同推进。",
+      training_caption:
+        "数据准备 → 嵌入层训练 → Offload SFT → GRPO → 得到 trained Ms。",
+      inference_title: "协作推理架构",
+      inference_desc:
+        "Ms（Qwen3.5-4B / vLLM）流式输出直至 τ_off；引擎打包 Cs，一次性接力给冻结的 Ml（GLM-5.2），再返回拼接流 Os ‖ OL。",
+      inf1_title: "Collaborate Engine",
+      inf1_desc: "状态机 · 流合并 · offload 检测 — 双端拼接只发生在这里。",
+      inf2_title: "Token 级自路由",
+      inf2_desc: "检测到 τ_off 后挂起 Ms、Pack(Cs)，再把 q + Cs 一次性发给大模型 API。",
+      inf3_title: "拼接输出流",
+      inf3_desc: "用户看到的是连续答案：小模型前缀 + 大模型补全。",
+      inference_caption:
+        "User ↔ Collaborate Engine ↔ Ms / Ml：Token 级 offload 与流式拼接。",
       results_label: "实验结果",
       results_title: "可调节的质量–成本帕累托前沿",
       results_desc:
@@ -455,10 +496,27 @@
     });
   }
 
+  function setupMethodTabs() {
+    const tabs = document.querySelectorAll(".method-tab");
+    const panels = document.querySelectorAll(".method-panel");
+    if (!tabs.length) return;
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => {
+        const key = tab.getAttribute("data-method");
+        tabs.forEach((t) => t.setAttribute("aria-selected", String(t === tab)));
+        panels.forEach((panel) => {
+          panel.hidden = panel.getAttribute("data-method") !== key;
+        });
+      });
+    });
+  }
+
   applyI18n();
   setupLang();
   setupNav();
   setupReveal();
   setupCopy();
+  setupMethodTabs();
   loadCases();
 })();
