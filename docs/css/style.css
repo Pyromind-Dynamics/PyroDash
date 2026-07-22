@@ -592,14 +592,13 @@ table.results tr.is-best td {
 }
 
 .case-prompt {
-  --case-prompt-offset: 11.5rem;
-  position: sticky;
-  top: 3.75rem;
-  z-index: 20;
+  --case-prompt-offset: 0px;
+  position: static;
+  z-index: auto;
   margin-bottom: 1rem;
   padding: 0.85rem 0 1rem;
-  background: linear-gradient(180deg, rgba(10, 14, 20, 0.98) 0%, rgba(10, 14, 20, 0.92) 85%, transparent 100%);
-  backdrop-filter: blur(10px);
+  background: transparent;
+  backdrop-filter: none;
   border-bottom: 1px solid var(--line);
 }
 
@@ -622,7 +621,8 @@ table.results tr.is-best td {
 }
 
 .case-block-compact .case-stream-q {
-  max-height: 7.5rem;
+  max-height: none;
+  overflow: visible;
 }
 
 .case-block-compact .case-answer {
@@ -681,16 +681,18 @@ table.results tr.is-best td {
   display: grid;
   grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
   gap: 1.25rem;
-  align-items: start;
+  align-items: stretch;
 }
 
 .case-sidebar {
-  position: sticky;
-  top: calc(3.75rem + var(--case-prompt-offset, 11.5rem));
-  align-self: start;
+  position: static;
+  align-self: stretch;
+  box-sizing: border-box;
   border: 1px solid var(--line);
   background: var(--bg-elevated);
   padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
 }
 
 .case-sidebar-title {
@@ -701,6 +703,7 @@ table.results tr.is-best td {
   text-transform: uppercase;
   color: var(--ink-muted);
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .case-sidebar-list {
@@ -709,6 +712,8 @@ table.results tr.is-best td {
   padding: 0;
   display: grid;
   gap: 0.35rem;
+  align-content: start;
+  flex: 1 1 auto;
 }
 
 .case-sidebar-item {
@@ -786,11 +791,33 @@ table.results tr.is-best td {
   display: grid;
   gap: 1.25rem;
   min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+}
+
+.case-block-result {
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  overflow: hidden;
+  contain: layout paint;
 }
 
 .case-block-result .case-stream,
+#case-result,
 #case-result.stream-offload {
   max-height: min(52vh, 36rem);
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  /* Prevent KaTeX descendants from extending document scrollHeight past the footer */
+  contain: layout paint;
+  overscroll-behavior: contain;
 }
 
 .case-block h3 {
@@ -889,8 +916,11 @@ table.results tr.is-best td {
   font-size: 0.78rem;
   line-height: 1.55;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   max-height: 24rem;
+  max-width: 100%;
+  box-sizing: border-box;
   overflow: auto;
   padding: 1rem;
   background: var(--bg-elevated);
@@ -899,7 +929,7 @@ table.results tr.is-best td {
 }
 
 .case-stream-q {
-  max-height: 14rem;
+  max-height: none;
   color: var(--ink);
 }
 
@@ -925,7 +955,6 @@ table.results tr.is-best td {
   border-left: 3px solid var(--offload-token);
   background: var(--bg-elevated);
   color: var(--ink-muted);
-  max-height: 32rem;
 }
 
 .case-stream .seg-slm {
@@ -965,8 +994,20 @@ table.results tr.is-best td {
 
 .case-stream .katex-display {
   margin: 0.6em 0;
+  max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+}
+
+.case-stream .katex-display > .katex {
+  max-width: 100%;
+}
+
+/* Prevent KaTeX / long tokens from stretching the case layout */
+.case-layout,
+.case-prompt,
+.case-prompt-grid {
+  max-width: 100%;
 }
 
 /* ——— Resources ——— */

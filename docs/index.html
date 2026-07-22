@@ -41,11 +41,12 @@
     <header class="hero">
       <div class="hero-copy">
         <p class="hero-brand">Pyro<em>Dash</em></p>
-        <h1 class="hero-title" data-i18n="hero_title">Small models ask for help — only when it counts.</h1>
-        <p class="hero-lead" data-i18n="hero_lead">Token-level offload with &lt;|llm_offload|&gt;. Near LLM quality, a fraction of the cloud bill.</p>
+        <h1 class="hero-title" data-i18n="hero_title">A novel cost-aware, token-level paradigm for collaborative inference between
+SLM and LLM</h1>
+        <p class="hero-lead" data-i18n="hero_lead">Token-level offload with &lt;|llm_offload|&gt;. Near-LLM performance with fractional LLM-only inference cost.</p>
         <div class="cta-row">
           <a class="btn btn-primary" href="https://github.com/PyroMind-Dynamics/pyroDash" data-i18n="cta_github">View on GitHub</a>
-          <a class="btn btn-ghost" href="https://huggingface.co/pyromind" data-i18n="cta_hf">Hugging Face · pyromind</a>
+          <a class="btn btn-ghost" href="https://huggingface.co/pyromind" data-i18n="cta_hf">Hugging Face · PyroMind</a>
           <a class="btn btn-ghost" href="https://pyromind.ai/" data-i18n="cta_pyromind">PyroMind Console</a>
         </div>
       </div>
@@ -54,8 +55,8 @@
     <section class="section" id="method">
       <div class="section-inner reveal">
         <p class="section-label" data-i18n="method_label">How it works</p>
-        <h2 class="section-title" data-i18n="method_title">Train the small model to ask — then stitch the stream</h2>
-        <p class="section-desc" data-i18n="method_desc">No external router. No LLM retraining. Progressive training teaches Ms when to emit &lt;|llm_offload|&gt;; at inference, the Collaborate Engine suspends, relays, and merges the two streams.</p>
+        <h2 class="section-title" data-i18n="method_title">Train the SLM to initiate queries and concatenate streams.</h2>
+        <p class="section-desc" data-i18n="method_desc">No external router. No LLM retraining. Progressive training teaches SLM when to emit &lt;|llm_offload|&gt;; at inference, the Collaborate Engine suspends, relays, and concatenate streams.</p>
 
         <div class="method-tabs" role="tablist" aria-label="Method views">
           <button type="button" class="method-tab" role="tab" id="method-tab-training" data-method="training" aria-selected="true" aria-controls="method-panel-training" data-i18n="tab_training">Training</button>
@@ -67,12 +68,12 @@
             <div class="method-row">
               <div class="method-copy">
                 <h3 class="method-subtitle" data-i18n="training_title">Three-stage progressive training</h3>
-                <p class="method-subdesc" data-i18n="training_desc">Data prep filters easy/hard samples and inserts control tags. Then: embed τ_off, cold-start offload SFT, and GRPO with a cost-aware reward.</p>
+                <p class="method-subdesc" data-i18n="training_desc">Data preparation filters easy/hard samples and inserts control tags &lt;|llm_offload|&gt;. Then embed &lt;|llm_offload|&gt;, cold-start offload SFT, and GRPO with a cost-aware reward.</p>
 
                 <div class="pipeline">
                   <article class="pipeline-step">
                     <h3 data-i18n="stage1_title">Control-token embedding</h3>
-                    <p data-i18n="stage1_desc">LoRA on embed_tokens + lm_head, then keep only the τ_off embedding row so Ms can express offload intent.</p>
+                    <p data-i18n="stage1_desc">LoRA on embed_tokens + lm_head, then keep only the &lt;|llm_offload|&gt; embedding row so SLM can express offload intent.</p>
                   </article>
                   <article class="pipeline-step">
                     <h3 data-i18n="stage2_title">Offload cold-start</h3>
@@ -80,14 +81,14 @@
                   </article>
                   <article class="pipeline-step">
                     <h3 data-i18n="stage3_title">GRPO enhancement</h3>
-                    <p data-i18n="stage3_desc">With Ml frozen, optimize R = R_accuracy − λ · R_efficiency so quality and cloud cost move together.</p>
+                    <p data-i18n="stage3_desc">With LLM frozen, optimize R = R_accuracy − λ · R_efficiency so performance and LLM-only cost move together.</p>
                   </article>
                 </div>
               </div>
 
               <figure class="figure-block method-figure">
                 <img src="assets/training.png" alt="Three-stage progressive training pipeline" width="1536" height="1024" loading="lazy" />
-                <figcaption class="figure-caption" data-i18n="training_caption">Data preparation → embedding-layer train → offload SFT → GRPO → trained Ms.</figcaption>
+                <figcaption class="figure-caption" data-i18n="training_caption">Data preparation → embedding-layer training → offload SFT → GRPO → trained SLM.</figcaption>
               </figure>
             </div>
           </div>
@@ -96,27 +97,27 @@
             <div class="method-row">
               <div class="method-copy">
                 <h3 class="method-subtitle" data-i18n="inference_title">Collaborative inference architecture</h3>
-                <p class="method-subdesc" data-i18n="inference_desc">Ms (Qwen3.5-4B / vLLM) streams until τ_off. The engine packs Cs, one-shot relays to frozen Ml (GLM-5.2), then returns the stitched stream Os ‖ OL.</p>
+                <p class="method-subdesc" data-i18n="inference_desc">SLM (Qwen3.5-4B / vLLM) streams until &lt;|llm_offload|&gt;. The Collaborate Engine packs context of SLM (Cs), one-shot relays to frozen LLM (GLM-5.2), then returns the concatenated stream of SLM and LLM.</p>
 
                 <div class="inference-points">
                   <article class="inference-point">
                     <h4 data-i18n="inf1_title">Collaborate Engine</h4>
-                    <p data-i18n="inf1_desc">State machine · stream merge · offload detect — the only place that stitches the two sides.</p>
+                    <p data-i18n="inf1_desc">Offload detect · stream concatenate — one-shot concatenate streams.</p>
                   </article>
                   <article class="inference-point">
                     <h4 data-i18n="inf2_title">Token-level self-routing</h4>
-                    <p data-i18n="inf2_desc">On τ_off: suspend Ms, Pack(Cs), then one-shot relay q + Cs to the large-model API.</p>
+                    <p data-i18n="inf2_desc">Upon &lt;|llm_offload|&gt;: suspend SLM, Pack(Cs), then one-shot relay query + Cs to the LLM API.</p>
                   </article>
                   <article class="inference-point">
-                    <h4 data-i18n="inf3_title">Stitched stream</h4>
-                    <p data-i18n="inf3_desc">User sees one continuous answer: small-model prefix plus large-model completion.</p>
+                    <h4 data-i18n="inf3_title">Concatenated stream</h4>
+                    <p data-i18n="inf3_desc">Users always get continuous answers: SLM prefix plus LLM completion.</p>
                   </article>
                 </div>
               </div>
 
               <figure class="figure-block method-figure">
                 <img src="assets/inference.png" alt="Collaborative inference architecture" width="3224" height="1952" loading="lazy" />
-                <figcaption class="figure-caption" data-i18n="inference_caption">User ↔ Collaborate Engine ↔ Ms / Ml, with token-level offload and stream merge.</figcaption>
+                <figcaption class="figure-caption" data-i18n="inference_caption">User ↔ Collaborate Engine ↔ SLM / LLM, with token-level offload and stream concatenate.</figcaption>
               </figure>
             </div>
           </div>
@@ -128,26 +129,26 @@
       <div class="section-inner reveal">
         <p class="section-label" data-i18n="results_label">Results</p>
         <h2 class="section-title" data-i18n="results_title">A tunable quality–cost Pareto frontier</h2>
-        <p class="section-desc" data-i18n="results_desc">On five math benchmarks (Minerva, GSM8K, Olympiad, AIME25, AIME24), PyroDash with Qwen3.5-4B + GLM-5.2 breaks the usual trade-off.</p>
+        <p class="section-desc" data-i18n="results_desc">On five math benchmarks (Minerva, GSM8K, Olympiad, AIME25, AIME24), PyroDash with Qwen3.5-4B + GLM-5.2 breaks the conventional trade-off barrier.</p>
 
         <div class="metrics">
           <div class="metric">
             <p class="metric-value">64.04<span class="unit">%</span></p>
-            <p class="metric-label" data-i18n="metric1">Avg. accuracy (λ=0.05) — above GLM-5.2 alone</p>
+            <p class="metric-label" data-i18n="metric1">Avg. accuracy PyroDash (λ=0.05) — outperform GLM-5.2 (LLM-only)</p>
           </div>
           <div class="metric">
             <p class="metric-value">96.4<span class="unit">%</span></p>
-            <p class="metric-label" data-i18n="metric2">Cost cut vs. pure cloud (λ=0.6)</p>
+            <p class="metric-label" data-i18n="metric2">Cost reduction PyroDash (λ=0.6) vs. GLM-5.2 (LLM-only)</p>
           </div>
           <div class="metric">
             <p class="metric-value">1.90<span class="unit">%</span></p>
-            <p class="metric-label" data-i18n="metric3">LLM token ratio at the low-cost operating point</p>
+            <p class="metric-label" data-i18n="metric3">LLM token ratio at λ=0.6</p>
           </div>
         </div>
 
         <figure class="figure-block">
           <img src="assets/fig_cost_accuracy_pareto.png" alt="Cost–accuracy Pareto frontier" width="1200" height="832" loading="lazy" />
-          <figcaption class="figure-caption" data-i18n="fig_caption">Five-benchmark total cost vs. average accuracy. PyroDash (λ=0.05) exceeds GLM-5.2-FP8 accuracy; λ=0.6 drops cost from $49.36 to $1.78.</figcaption>
+          <figcaption class="figure-caption" data-i18n="fig_caption">Total cost and average accuracy across five benchmarks. PyroDash (λ=0.05) outperform GLM-5.2-FP8; PyroDash (λ=0.6) reduces cost from $49.36 to $1.78.</figcaption>
         </figure>
 
         <div class="results-table-wrap">
@@ -227,8 +228,8 @@
     <section class="section" id="cases">
       <div class="section-inner reveal">
         <p class="section-label" data-i18n="cases_label">Case study</p>
-        <h2 class="section-title" data-i18n="cases_title">Where the small model gets stuck — and asks</h2>
-        <p class="section-desc" data-i18n="cases_desc">Same problem: SLM-only vs. PyroDash relay. Watch the control token fire, then the large model finish the chain.</p>
+        <h2 class="section-title" data-i18n="cases_title">Offload and relay circumstances</h2>
+        <p class="section-desc" data-i18n="cases_desc">Same problem: Once the Collaborate Engine detects the &lt;|llm_offload|&gt;, LLM relay starts.</p>
 
         <div class="case-legend">
           <span class="legend-item legend-qwen"><i></i><span data-i18n="legend_qwen">Qwen3.5-4B</span></span>
@@ -317,7 +318,7 @@
           </li>
           <li>
             <a href="https://github.com/PyroMind-Dynamics/pyroDash">
-              pyroDash
+              PyroDash
               <span data-i18n="res_eval">Math evaluation code</span>
             </a>
           </li>
