@@ -6,8 +6,6 @@
 
 ---
 
-> 训练数据见 Hugging Face：[EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k)。
-
 ## 🔥 Updates
 
 - **2026-07-22**：发布项目主页、数学评测代码、[EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k)，以及模型（见 [Hugging Face · pyromind](https://huggingface.co/pyromind)：[SFT](https://huggingface.co/pyromind/PyroDash-4B-SFT)、[GRPO λ=0.05](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.05)、[GRPO λ=0.6](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.6)）。Milestone 1 数学评测闭环基本完成；Collaborate Engine 与一键复现仍在进行中。
@@ -79,8 +77,6 @@ Tokenizer 必须包含特殊 token `<|llm_offload|>`。
 ---
 
 ## 📋 TODO
-
-> 完整清单见 [`todo/todo.md`](todo/todo.md)
 
 **Milestone 1 — Math 场景评测闭环**
 

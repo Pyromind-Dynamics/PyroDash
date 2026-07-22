@@ -6,8 +6,6 @@
 
 ---
 
-> Training data: [EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k) on Hugging Face.
-
 ## 🔥 Updates
 
 - **2026-07-22**: Release project page, math evaluation code, [EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k), and models on [Hugging Face · pyromind](https://huggingface.co/pyromind) ([SFT](https://huggingface.co/pyromind/PyroDash-4B-SFT), [GRPO λ=0.05](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.05), [GRPO λ=0.6](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.6)). Milestone 1 math eval loop largely done; Collaborate Engine & one-click reproduce still in progress.
@@ -79,8 +77,6 @@ Tokenizer must include the special token `<|llm_offload|>`.
 ---
 
 ## 📋 TODO
-
-> Full checklist: [`todo/todo.md`](todo/todo.md)
 
 **Milestone 1 — Math eval loop**
 
