@@ -15,6 +15,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Noto+Sans+SC:wght@400;500;600;700&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -43,7 +44,7 @@
         <h1 class="hero-title" data-i18n="hero_title">Small models ask for help — only when it counts.</h1>
         <p class="hero-lead" data-i18n="hero_lead">Token-level offload with &lt;|llm_offload|&gt;. Near LLM quality, a fraction of the cloud bill.</p>
         <div class="cta-row">
-          <a class="btn btn-primary" href="https://github.com/PyroMind-Dynamics/pyroDash-evaluate" data-i18n="cta_github">View on GitHub</a>
+          <a class="btn btn-primary" href="https://github.com/PyroMind-Dynamics/pyroDash" data-i18n="cta_github">View on GitHub</a>
           <a class="btn btn-ghost" href="https://huggingface.co/pyromind" data-i18n="cta_hf">Hugging Face · pyromind</a>
           <a class="btn btn-ghost" href="https://pyromind.ai/" data-i18n="cta_pyromind">PyroMind Console</a>
         </div>
@@ -146,7 +147,7 @@
 
         <figure class="figure-block">
           <img src="assets/fig_cost_accuracy_pareto.png" alt="Cost–accuracy Pareto frontier" width="1200" height="832" loading="lazy" />
-          <figcaption class="figure-caption" data-i18n="fig_caption">Five-benchmark total cost vs. average accuracy. PyroDash (λ=0.05) exceeds GLM-5.2 accuracy; λ=0.6 drops cost from $49.37 to $1.79.</figcaption>
+          <figcaption class="figure-caption" data-i18n="fig_caption">Five-benchmark total cost vs. average accuracy. PyroDash (λ=0.05) exceeds GLM-5.2-FP8 accuracy; λ=0.6 drops cost from $49.36 to $1.78.</figcaption>
         </figure>
 
         <div class="results-table-wrap">
@@ -154,8 +155,9 @@
             <thead>
               <tr>
                 <th data-i18n="th_method">Method</th>
-                <th>Avg.</th>
-                <th>LLM Token %</th>
+                <th>Avg. Acc. (%)</th>
+                <th>LLM Token Ratio (%)</th>
+                <th>Avg. LLM Calls</th>
                 <th>Cost ($)</th>
               </tr>
             </thead>
@@ -164,43 +166,57 @@
                 <td>Qwen3.5-4B</td>
                 <td>28.36</td>
                 <td>0.00</td>
+                <td>0.000</td>
                 <td>2.26</td>
               </tr>
               <tr>
                 <td>Qwen3.5-4B (+SFT)</td>
                 <td>46.25</td>
                 <td>0.00</td>
+                <td>0.000</td>
                 <td>1.32</td>
               </tr>
               <tr>
-                <td>RouteLLM (~75% GLM)</td>
+                <td>RouteLLM (~75% GLM-5.2-FP8)</td>
                 <td>52.74</td>
                 <td>77.37</td>
+                <td>0.808</td>
                 <td>44.62</td>
               </tr>
               <tr>
-                <td>GlimpRouter</td>
+                <td>GlimpRouter (τ=0.9)</td>
                 <td>54.20</td>
                 <td>75.11</td>
-                <td>31.62</td>
+                <td>1.20</td>
+                <td>31.61</td>
               </tr>
-              <tr class="is-best">
-                <td>PyroDash (λ=0.05)</td>
-                <td>64.04</td>
-                <td>95.34</td>
-                <td>39.27</td>
+              <tr>
+                <td>PyroDash (λ=0.1)</td>
+                <td>55.29</td>
+                <td>8.19</td>
+                <td>0.058</td>
+                <td>4.71</td>
               </tr>
               <tr>
                 <td>PyroDash (λ=0.6)</td>
                 <td>54.55</td>
                 <td>1.90</td>
-                <td>1.79</td>
+                <td>0.012</td>
+                <td>1.78</td>
+              </tr>
+              <tr class="is-best">
+                <td><strong>PyroDash (λ=0.05)</strong></td>
+                <td><strong>64.04</strong></td>
+                <td>95.34</td>
+                <td>0.975</td>
+                <td>39.29</td>
               </tr>
               <tr>
-                <td>GLM-5.2</td>
+                <td>GLM-5.2-FP8</td>
                 <td>57.68</td>
                 <td>100.00</td>
-                <td>49.37</td>
+                <td>1.000</td>
+                <td>49.36</td>
               </tr>
             </tbody>
           </table>
@@ -233,7 +249,7 @@
             </div>
             <div class="case-block case-block-compact">
               <h4 data-i18n="gt_label">Answer</h4>
-              <p class="case-answer" id="case-answer"></p>
+              <div class="case-answer" id="case-answer"></div>
             </div>
           </div>
         </div>
@@ -300,8 +316,8 @@
             </a>
           </li>
           <li>
-            <a href="https://github.com/PyroMind-Dynamics/pyroDash-evaluate">
-              pyroDash-evaluate
+            <a href="https://github.com/PyroMind-Dynamics/pyroDash">
+              pyroDash
               <span data-i18n="res_eval">Math evaluation code</span>
             </a>
           </li>
@@ -328,6 +344,9 @@
     </div>
   </footer>
 
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+  <script src="js/cases-data.js"></script>
   <script src="js/main.js" defer></script>
 </body>
 </html>

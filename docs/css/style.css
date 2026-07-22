@@ -956,6 +956,19 @@ table.results tr.is-best td {
   opacity: 0.85;
 }
 
+.case-stream .katex,
+.case-answer .katex,
+.case-stream-q .katex {
+  font-size: 1.05em;
+  color: inherit;
+}
+
+.case-stream .katex-display {
+  margin: 0.6em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 /* ——— Resources ——— */
 .resource-list {
   list-style: none;

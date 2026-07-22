@@ -55,7 +55,7 @@
       metric2: "Cost cut vs. pure cloud (λ=0.6)",
       metric3: "LLM token ratio at the low-cost operating point",
       fig_caption:
-        "Five-benchmark total cost vs. average accuracy. PyroDash (λ=0.05) exceeds GLM-5.2 accuracy; λ=0.6 drops cost from $49.37 to $1.79.",
+        "Five-benchmark total cost vs. average accuracy. PyroDash (λ=0.05) exceeds GLM-5.2-FP8 accuracy; λ=0.6 drops cost from $49.36 to $1.78.",
       th_method: "Method",
       cases_label: "Case study",
       cases_title: "Where the small model gets stuck — and asks",
@@ -138,7 +138,7 @@
       metric2: "相对纯云端费用降幅（λ=0.6）",
       metric3: "低成本工作点的 LLM Token 占比",
       fig_caption:
-        "五基准合计费用 vs 平均准确率。PyroDash（λ=0.05）准确率超过 GLM-5.2；λ=0.6 将费用从 $49.37 降至 $1.79。",
+        "五基准合计费用 vs 平均准确率。PyroDash（λ=0.05）准确率超过 GLM-5.2-FP8；λ=0.6 将费用从 $49.36 降至 $1.78。",
       th_method: "方法",
       cases_label: "案例",
       cases_title: "小模型卡住的地方——以及它如何求助",
@@ -173,14 +173,8 @@
   };
 
   const OFFLOAD = "<|llm_offload|>";
-  const CASE_KEYS = [
-    "relay-off-r__glm-r__sft-f__qwen-f",
-    "relay-off-r__glm-f__sft-f__qwen-f",
-    "relay-off-r__glm-f__sft-r__qwen-f",
-    "relay-noff-r__glm-r__sft-r__qwen-r",
-  ];
+  const cases = Array.isArray(window.PYRODASH_CASES) ? window.PYRODASH_CASES : [];
   let lang = localStorage.getItem("pyrodash-lang") || "en";
-  let cases = [];
   let activeCase = 0;
   let activeModel = "qwen";
 
@@ -188,6 +182,18 @@
     qwen: { tag: "Qwen", tagClass: "tag-qwen", streamClass: "stream-qwen", titleKey: "qwen_label" },
     glm: { tag: "GLM", tagClass: "tag-glm", streamClass: "stream-glm", titleKey: "glm_label" },
     offload: { tag: "Offload", tagClass: "tag-offload", streamClass: "stream-offload", titleKey: "offload_label" },
+  };
+
+  const KATEX_OPTS = {
+    delimiters: [
+      { left: "$$", right: "$$", display: true },
+      { left: "\\[", right: "\\]", display: true },
+      { left: "\\(", right: "\\)", display: false },
+      { left: "$", right: "$", display: false },
+    ],
+    throwOnError: false,
+    strict: "ignore",
+    trust: false,
   };
 
   function applyI18n() {
@@ -208,17 +214,65 @@
       .replace(/>/g, "&gt;");
   }
 
+  function protectCurrencyDollars(text) {
+    const src = String(text || "");
+    let out = "";
+    let i = 0;
+    while (i < src.length) {
+      if (src.startsWith("$$", i)) {
+        const end = src.indexOf("$$", i + 2);
+        if (end < 0) {
+          out += src.slice(i);
+          break;
+        }
+        out += src.slice(i, end + 2);
+        i = end + 2;
+        continue;
+      }
+
+      if (src[i] === "$" && (i === 0 || src[i - 1] !== "\\")) {
+        const close = src.indexOf("$", i + 1);
+        if (close > i + 1) {
+          const inner = src.slice(i + 1, close);
+          const isMath = /[\\^_{}]/.test(inner);
+          if (isMath) {
+            out += src.slice(i, close + 1);
+            i = close + 1;
+            continue;
+          }
+        }
+        const money = src.slice(i).match(/^\$\d+(?:\.\d+)?/);
+        if (money) {
+          out += `\\$${money[0].slice(1)}`;
+          i += money[0].length;
+          continue;
+        }
+      }
+
+      out += src[i];
+      i += 1;
+    }
+    return out;
+  }
+
+  function prepareMathText(text) {
+    let src = protectCurrencyDollars(text);
+    // Wrap bare \boxed{...} so KaTeX can render it.
+    src = src.replace(/(^|[^$\\])(\\boxed\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})(?!\$)/g, "$1$$$2$$");
+    return src;
+  }
+
   function formatText(text) {
-    let html = escapeHtml(text);
+    let html = escapeHtml(prepareMathText(text));
     html = html.replace(
-      /&lt;(\/?redacted_thinking|think)&gt;/gi,
+      /&lt;(\/?redacted_thinking|\/?think)&gt;/gi,
       '<span class="think-tag">&lt;$1&gt;</span>'
     );
     return html;
   }
 
   function highlightToken(text) {
-    const parts = text.split(OFFLOAD);
+    const parts = String(text || "").split(OFFLOAD);
     if (parts.length === 1) return formatText(text);
     return parts
       .map((part, i) => {
@@ -228,6 +282,15 @@
           : chunk;
       })
       .join("");
+  }
+
+  function renderLatex(el) {
+    if (!el || typeof renderMathInElement !== "function") return;
+    try {
+      renderMathInElement(el, KATEX_OPTS);
+    } catch {
+      /* ignore katex errors */
+    }
   }
 
   function getLlmContinuation(raw, completed) {
@@ -257,82 +320,6 @@
 
     const llmPart = getLlmContinuation(raw, completed);
     return `<span class="seg-slm">${highlightToken(raw)}</span><span class="seg-llm">${formatText(llmPart)}</span>`;
-  }
-
-  function extractLastBoxed(text) {
-    const src = String(text || "");
-    let last = null;
-    const marker = "\\boxed{";
-    let i = 0;
-    while (i < src.length) {
-      const start = src.indexOf(marker, i);
-      if (start < 0) break;
-      let depth = 0;
-      let j = start + marker.length - 1;
-      for (; j < src.length; j++) {
-        const ch = src[j];
-        if (ch === "{") depth += 1;
-        else if (ch === "}") {
-          depth -= 1;
-          if (depth === 0) {
-            last = src.slice(start + marker.length, j);
-            break;
-          }
-        }
-      }
-      i = start + marker.length;
-    }
-    return last;
-  }
-
-  function normalizeAnswer(text) {
-    return String(text || "")
-      .replace(/\$+/g, "")
-      .replace(/\\left|\\right/g, "")
-      .replace(/\\,/g, "")
-      .replace(/\\ /g, "")
-      .replace(/[{}]/g, "")
-      .replace(/\s+/g, "")
-      .replace(/,/g, "")
-      .toLowerCase();
-  }
-
-  function answersMatch(pred, gt) {
-    if (pred == null || pred === "") return false;
-    const a = normalizeAnswer(pred);
-    const b = normalizeAnswer(gt);
-    if (!a || !b) return false;
-    if (a === b) return true;
-    const na = Number(a);
-    const nb = Number(b);
-    return Number.isFinite(na) && Number.isFinite(nb) && na === nb;
-  }
-
-  function computeVerdicts(item) {
-    const gt = extractLastBoxed(item.answer) || item.answer;
-    const qwenPred = extractLastBoxed(item.qwen_response?.completed_response);
-    const glmPred = extractLastBoxed(item.glm_response?.completed_response);
-    const relayPred = extractLastBoxed(item.relay_response?.completed_response);
-    return {
-      qwen: answersMatch(qwenPred, gt),
-      glm: answersMatch(glmPred, gt),
-      offload: answersMatch(relayPred, gt),
-    };
-  }
-
-  function flattenCases(data) {
-    const list = [];
-    CASE_KEYS.forEach((key) => {
-      (data[key] || []).forEach((item) => {
-        list.push({
-          ...item,
-          category: key,
-          hasOffload: key.includes("relay-off"),
-          verdicts: computeVerdicts(item),
-        });
-      });
-    });
-    return list;
   }
 
   function updateModelVerdictUI(c) {
@@ -366,7 +353,6 @@
     tagEl.className = `result-tag ${meta.tagClass}${verdictClass}`;
     titleEl.textContent = dict[meta.titleKey] || meta.titleKey;
     if (labelEl) labelEl.className = verdictClass.trim();
-    // Bottom stream keeps model accent colors (no verdict class)
     resultEl.className = `case-stream ${meta.streamClass}`;
 
     updateModelVerdictUI(c);
@@ -378,6 +364,7 @@
     } else {
       resultEl.innerHTML = buildOffloadHtml(c.relay_response);
     }
+    renderLatex(resultEl);
   }
 
   function renderCase(i) {
@@ -391,8 +378,13 @@
 
     document.getElementById("case-title").textContent =
       `${c.dataset || "case"} · #${c.idx ?? i}`;
-    document.getElementById("case-question").textContent = c.question || "";
-    document.getElementById("case-answer").textContent = c.answer || "";
+
+    const qEl = document.getElementById("case-question");
+    const aEl = document.getElementById("case-answer");
+    qEl.innerHTML = formatText(c.question || "");
+    aEl.innerHTML = formatText(c.answer || "");
+    renderLatex(qEl);
+    renderLatex(aEl);
     renderModelResult();
   }
 
@@ -425,18 +417,14 @@
     });
   }
 
-  async function loadCases() {
-    try {
-      const res = await fetch("data/case_0.json");
-      const data = await res.json();
-      cases = flattenCases(data);
-      if (!cases.length) return;
-      buildTabs();
-      setupModelSidebar();
-      renderCase(0);
-    } catch (err) {
-      console.warn("Failed to load cases", err);
+  function initCases() {
+    if (!cases.length) {
+      console.warn("No static cases found (window.PYRODASH_CASES).");
+      return;
     }
+    buildTabs();
+    setupModelSidebar();
+    renderCase(0);
   }
 
   function setupReveal() {
@@ -518,5 +506,5 @@
   setupReveal();
   setupCopy();
   setupMethodTabs();
-  loadCases();
+  initCases();
 })();

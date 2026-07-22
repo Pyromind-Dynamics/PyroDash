@@ -2,16 +2,22 @@
 
 **Language / 语言:** [English](README.md) | [中文](README_zh.md)
 
-<a href="https://PyroMind-Dynamics.github.io/pyroDash-evaluate/"><img src="https://img.shields.io/badge/🌐%20Website-GitHub%20Pages-blue"/></a>&nbsp;&nbsp;<a href="#-citation"><img src="https://img.shields.io/badge/📄%20Paper-Preprint-blue"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/datasets/pyromind/easyhard-24k"><img src="https://img.shields.io/badge/🤗%20Dataset-EasyHard--24K-yellow"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/pyromind"><img src="https://img.shields.io/badge/🤗%20HuggingFace-pyromind-yellow"/></a>&nbsp;&nbsp;<a href="https://pyromind.ai/"><img src="https://img.shields.io/badge/🚀%20Quick%20Reproduce-PyroMind-orange"/></a>
+<a href="https://PyroMind-Dynamics.github.io/pyroDash/"><img src="https://img.shields.io/badge/🌐%20Website-GitHub%20Pages-blue"/></a>&nbsp;&nbsp;<a href="#-citation"><img src="https://img.shields.io/badge/📄%20Paper-Preprint-blue"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/pyromind"><img src="https://img.shields.io/badge/🤗%20HuggingFace-pyromind-yellow"/></a>
 
 ---
 
-> **一键复现：** 打开 [PyroMind Console](https://pyromind.ai/)，即可端到端快速复现评测。训练数据见 Hugging Face：[EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k)。
+> 训练数据见 Hugging Face：[EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k)。
+
+## 🔥 Updates
+
+- **2026-07-22**：发布项目主页、数学评测代码、[EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k)，以及模型（见 [Hugging Face · pyromind](https://huggingface.co/pyromind)：[SFT](https://huggingface.co/pyromind/PyroDash-4B-SFT)、[GRPO λ=0.05](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.05)、[GRPO λ=0.6](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.6)）。Milestone 1 数学评测闭环基本完成；Collaborate Engine 与一键复现仍在进行中。
+
+---
 
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="./figs/fig_inference_architecture.png" alt="Inference Architecture" width="100%"/>
+<img src="./docs/assets/inference.png" alt="Inference Architecture" width="100%"/>
 </td>
 <td width="50%" valign="top">
 
@@ -23,6 +29,10 @@
 
 训练上，PyroDash 采用三阶段渐进式优化管线：（1）训练控制符嵌入层，使小模型具备基本的 offload 表达能力；（2）冷启动 offload 能力，建立大小模型协作模式；（3）以 GRPO 强化学习联合优化动态 offload 策略，结合任务准确率奖励与大模型调用成本惩罚，在推理质量与算力成本之间取得自适应平衡。更多细节请见下方论文引用。
 
+<p align="center">
+  <img src="./docs/assets/training.png" alt="三阶段渐进式训练管线" width="80%"/>
+</p>
+
 ---
 
 ## 🚀 快速开始
@@ -30,8 +40,8 @@
 ### 1. 环境准备
 
 ```bash
-git clone https://github.com/PyroMind-Dynamics/pyroDash-evaluate.git
-cd pyroDash-evaluate
+git clone https://github.com/PyroMind-Dynamics/pyroDash.git
+cd pyroDash
 pip install -r requirements.txt
 ```
 
@@ -63,8 +73,37 @@ Tokenizer 必须包含特殊 token `<|llm_offload|>`。
 ## 📊 Results
 
 <p align="center">
-  <img src="./figs/fig_cost_accuracy_pareto.png" alt="Cost–Accuracy Pareto" width="70%"/>
+  <img src="./docs/assets/fig_cost_accuracy_pareto.png" alt="Cost–Accuracy Pareto" width="70%"/>
 </p>
+
+---
+
+## 📋 TODO
+
+> 完整清单见 [`todo/todo.md`](todo/todo.md)
+
+**Milestone 1 — Math 场景评测闭环**
+
+- [x] 基线：GLM-5.2 上界 / Qwen3.5-4B 下界 + Token 成本统计
+- [x] vLLM + GLM relay（`<|llm_offload|>`）+ per-dataset JSON + 费用汇总
+- [x] 对比：PyroDash / Query Router / Token Router + 帕累托曲线
+- [x] λ 扫描与消融
+- [ ] [PyroMind Console](https://pyromind.ai/) 一键复现（端到端评测）
+- [ ] Collaborate Engine
+
+**Milestone 2 — Coding + Agentic**
+
+- [ ] SWE-Bench（Verified / Lite）harness
+- [ ] Terminal-Bench v2 harness
+- [ ] Sandbox / 判分 + offload 轨迹与 Token 统计
+- [ ] Qwen3.5-4B / GLM-5.2 / PyroDash 对比 + 成本表
+- [ ] Math + SWE + Terminal 统一结果表与端到端脚本
+
+**Milestone 3 — 发布 Coding Plan**
+
+- [ ] 产品定义与协同推理引擎集成
+- [ ] 编程场景专项优化（补全 / 重构 / Debug）
+- [ ] 发布与推广
 
 ---
 
@@ -72,11 +111,10 @@ Tokenizer 必须包含特殊 token `<|llm_offload|>`。
 
 | 资源 | 链接 |
 |------|------|
-| 项目官网 | [PyroMind-Dynamics.github.io/pyroDash-evaluate](https://PyroMind-Dynamics.github.io/pyroDash-evaluate/) |
+| 项目官网 | [PyroMind-Dynamics.github.io/pyroDash](https://PyroMind-Dynamics.github.io/pyroDash/) |
 | 论文 | Preprint — 见 [Citation](#-citation) |
 | 数据集（EasyHard-24K） | [huggingface.co/datasets/pyromind/easyhard-24k](https://huggingface.co/datasets/pyromind/easyhard-24k) |
 | Hugging Face 组织 | [huggingface.co/pyromind](https://huggingface.co/pyromind) |
-| PyroMind Console | [pyromind.ai](https://pyromind.ai/) |
 
 ---
 

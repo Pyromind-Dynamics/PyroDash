@@ -35,6 +35,11 @@
 - [x] $\lambda$ 扫描（λ=0.05 / 0.1 / 0.2 / 0.3 / 0.6），自动出表找帕累托点
 - [x] 消融对比入口： Avg.Acc.(%)、LLM Token Ratio(%)、Avg.LLM Calls、Cost($)
 
+*Step 5 — 一键复现 & Collaborate Engine*
+
+- [ ] PyroMind Console 一键复现（端到端评测）
+- [ ] Collaborate Engine
+
 ---
 
 ## Milestone 2：Coding + Agentic 全场景评测
