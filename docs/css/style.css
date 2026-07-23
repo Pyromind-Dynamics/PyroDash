@@ -19,7 +19,7 @@
   --font-body: "Sora", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --pad: clamp(1.25rem, 4vw, 3.5rem);
-  --max: 1120px;
+  --max: 1300px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -121,6 +121,12 @@ a:hover {
   image-rendering: crisp-edges;
 }
 
+.brand-logo {
+  height: 27.2px;
+  width: auto;
+  display: block;
+}
+
 .brand-text span {
   color: var(--ember);
 }
@@ -138,10 +144,15 @@ a:hover {
   text-decoration: none;
   color: var(--ink-muted);
   font-size: 0.9rem;
+  transition: color 0.25s var(--ease);
 }
 
 .nav-links a:hover {
   color: var(--ink);
+}
+
+.nav-links a.is-active {
+  color: #FF5A30;
 }
 
 .lang-toggle {
@@ -224,15 +235,64 @@ html[lang="zh-CN"] .resource-list a {
 
 .cta-row {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 0.75rem;
+  align-items: center;
+  gap: 1.2rem;
 }
 
-.hero .cta-row .btn {
+.cta-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.68rem;
+  text-decoration: none;
+  color: var(--ink);
+  transition: opacity 0.25s var(--ease);
+}
+
+.cta-link:hover {
+  opacity: 0.82;
+  color: var(--ink);
+}
+
+.cta-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 100px;
+  background: linear-gradient(180deg, #45464a 0%, #45464a00 100%);
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 1.35rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.cta-icon svg {
+  width: 1.75rem;
+  height: 1.75rem;
+  color: var(--ink-muted);
+}
+
+.cta-icon img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.cta-label {
+  font-size: 0.84rem;
+  font-weight: 500;
   white-space: nowrap;
-  padding: 0.85rem 1rem;
-  font-size: 0.88rem;
+}
+
+.cta-chevron {
+  width: 0.84rem;
+  height: 0.84rem;
+  color: var(--ink-muted);
+  flex-shrink: 0;
 }
 
 .btn {
@@ -356,33 +416,40 @@ html[lang="zh-CN"] .resource-list a {
 /* ——— Method ——— */
 .method-tabs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin: 0.25rem 0 1.5rem;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  gap: 4px;
+  margin: 0.25rem 0 64px 0;
+  padding: 4px;
+  width: fit-content;
+  background: #1e1e20;
+  border: 1px solid var(--line);
+  border-radius: 50px;
 }
 
 .method-tab {
-  border: 1px solid var(--line);
+  border: none;
   background: transparent;
-  color: var(--ink-muted);
+  color: #ffffff;
   font: inherit;
   font-size: 0.88rem;
   font-weight: 600;
-  padding: 0.55rem 1.1rem;
+  padding: 0.55rem 1.5rem;
   cursor: pointer;
-  border-radius: 999px;
-  transition: background 0.2s var(--ease), border-color 0.2s var(--ease), color 0.2s var(--ease);
+  border-radius: 50px;
+  transition: background 0.25s var(--ease), color 0.25s var(--ease);
+  white-space: nowrap;
 }
 
 .method-tab:hover {
-  color: var(--ink);
-  border-color: var(--ink-muted);
+  color: #ffffff;
+  background: transparent;
 }
 
 .method-tab[aria-selected="true"] {
-  color: var(--ink);
-  border-color: var(--ember);
-  background: var(--ember-soft);
+  color: #ffffff;
+  background: #ff5a30;
+  border: none;
 }
 
 .method-panel[hidden] {
@@ -418,24 +485,26 @@ html[lang="zh-CN"] .resource-list a {
 .method-figure {
   margin: 0;
   min-width: 0;
+  text-align: center;
 }
 
 .method-figure img {
   max-height: none;
   background: #fff;
   padding: clamp(0.4rem, 1.2vw, 0.75rem);
+  border: 1px solid #44464C;
 }
 
 .pipeline {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1.1rem;
+  gap: calc(1.1rem + 20px);
   counter-reset: stage;
 }
 
 .pipeline-step {
   position: relative;
-  padding-top: 0.25rem;
+  padding-top: calc(0.25rem + 10px);
   border-top: 2px solid var(--ember);
 }
 
@@ -468,12 +537,12 @@ html[lang="zh-CN"] .resource-list a {
 .inference-points {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 1rem;
+  gap: calc(1rem + 16px);
 }
 
 .inference-point {
   border-top: 1px solid var(--line);
-  padding-top: 0.85rem;
+  padding-top: calc(0.85rem + 20px);
 }
 
 .inference-point h4 {
@@ -494,7 +563,7 @@ html[lang="zh-CN"] .resource-list a {
 .metrics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1.25rem;
+  gap: 64px;
   margin-bottom: 2.5rem;
 }
 
@@ -526,7 +595,7 @@ html[lang="zh-CN"] .resource-list a {
 }
 
 .figure-block {
-  margin-top: 0.5rem;
+  margin: 0.5rem 0 0;
 }
 
 .figure-block img {
@@ -534,9 +603,11 @@ html[lang="zh-CN"] .resource-list a {
   height: auto;
   max-height: none;
   object-fit: contain;
-  background: #fff;
-  padding: clamp(0.5rem, 2vw, 1rem);
-  border: 1px solid var(--line);
+  background: transparent;
+  padding: 0;
+  border: 1px solid #44464C;
+  border-radius: 12px;
+  box-sizing: border-box;
 }
 
 .figure-caption {
@@ -693,6 +764,7 @@ table.results tr.is-best td {
   padding: 0.75rem;
   display: flex;
   flex-direction: column;
+  border-radius: 12px;
 }
 
 .case-sidebar-title {
@@ -909,6 +981,7 @@ table.results tr.is-best td {
   border: 1px solid var(--line);
   border-left: 3px solid var(--ok);
   word-break: break-word;
+  border-radius: 12px;
 }
 
 .case-stream {
@@ -926,6 +999,42 @@ table.results tr.is-best td {
   background: var(--bg-elevated);
   border: 1px solid var(--line);
   color: var(--ink-muted);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  border-radius: 12px;
+}
+
+.case-stream::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.case-stream::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.case-stream::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+
+#case-result {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+#case-result::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+#case-result::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#case-result::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
 }
 
 .case-stream-q {
@@ -1062,6 +1171,7 @@ table.results tr.is-best td {
   font-size: 0.78rem;
   line-height: 1.55;
   color: var(--ink-muted);
+  border-radius: 12px;
 }
 
 .copy-btn {
@@ -1203,11 +1313,6 @@ table.results tr.is-best td {
 
   .hero .cta-row {
     flex-wrap: wrap;
-  }
-
-  .hero .cta-row .btn {
-    flex: 1 1 auto;
-    min-width: 0;
-    white-space: normal;
+    gap: 1.25rem;
   }
 }
