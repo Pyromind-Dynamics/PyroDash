@@ -5,12 +5,13 @@
       nav_method: "Method",
       nav_results: "Results",
       nav_cases: "Cases",
-      nav_resources: "Resources",
+      nav_resources: "Citation",
       hero_title:
         "A novel cost-aware, token-level paradigm for collaborative inference between SLM and LLM",
       hero_lead:
         "Token-level offload with <|llm_offload|>. Near-LLM performance with fractional LLM-only inference cost.",
       cta_hf: "Hugging Face · PyroMind",
+      cta_paper: "PyroDash Paper",
       cta_pyromind: "PyroMind Console",
       cta_reproduce: "Reproduce on PyroMind",
       cta_github: "View on GitHub",
@@ -91,11 +92,12 @@
       nav_method: "方法",
       nav_results: "结果",
       nav_cases: "案例",
-      nav_resources: "资源",
+      nav_resources: "Citation",
       hero_title: "面向 SLM 与 LLM 的成本感知 Token 级协同推理新范式",
       hero_lead:
         "通过 <|llm_offload|> 做 Token 级 offload：性能逼近纯大模型，推理费用仅为 LLM-only 的一小部分。",
       cta_hf: "Hugging Face · PyroMind",
+      cta_paper: "PyroDash 论文",
       cta_pyromind: "PyroMind 控制台",
       cta_reproduce: "在 PyroMind 一键复现",
       cta_github: "查看 GitHub",
@@ -450,9 +452,30 @@
 
   function setupNav() {
     const nav = document.querySelector(".site-nav");
+    const sectionIds = ["method", "results", "cases", "resources"];
+    const navLinks = document.querySelectorAll('.nav-links a[href^="#"]');
+
     const onScroll = () => {
       nav.classList.toggle("is-scrolled", window.scrollY > 12);
+
+      let currentId = "";
+      const probe = window.scrollY + window.innerHeight * 0.3;
+      sectionIds.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && el.offsetTop <= probe) currentId = id;
+      });
+
+      const atBottom =
+        window.innerHeight + window.scrollY >=
+        document.documentElement.scrollHeight - 2;
+      if (atBottom) currentId = sectionIds[sectionIds.length - 1];
+
+      navLinks.forEach((link) => {
+        const target = link.getAttribute("href").slice(1);
+        link.classList.toggle("is-active", target === currentId);
+      });
     };
+
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
   }
@@ -501,6 +524,29 @@
     });
   }
 
+  function snapCtaIcons() {
+    const icons = [...document.querySelectorAll(".cta-icon")];
+    if (!icons.length) return;
+    const state = new WeakMap();
+    const tick = () => {
+      icons.forEach((el) => {
+        const prev = state.get(el) || { dx: 0, dy: 0 };
+        const r = el.getBoundingClientRect();
+        // ignore the element's own applied transform to read its natural box
+        const natTop = r.top - prev.dy;
+        const natLeft = r.left - prev.dx;
+        const dx = Math.round(natLeft) - natLeft;
+        const dy = Math.round(natTop) - natTop;
+        if (Math.abs(dx - prev.dx) > 0.01 || Math.abs(dy - prev.dy) > 0.01) {
+          el.style.transform = `translate(${dx}px, ${dy}px)`;
+          state.set(el, { dx, dy });
+        }
+      });
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+
   applyI18n();
   setupLang();
   setupNav();
@@ -508,4 +554,5 @@
   setupCopy();
   setupMethodTabs();
   initCases();
+  snapCtaIcons();
 })();
