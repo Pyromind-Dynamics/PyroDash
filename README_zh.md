@@ -2,12 +2,13 @@
 
 **Language / 语言:** [English](README.md) | [中文](README_zh.md)
 
-<a href="https://PyroMind-Dynamics.github.io/pyroDash/"><img src="https://img.shields.io/badge/🌐%20Website-GitHub%20Pages-blue"/></a>&nbsp;&nbsp;<a href="#-citation"><img src="https://img.shields.io/badge/📄%20Paper-Preprint-blue"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/pyromind"><img src="https://img.shields.io/badge/🤗%20HuggingFace-pyromind-yellow"/></a>
+<a href="https://PyroMind-Dynamics.github.io/pyroDash/"><img src="https://img.shields.io/badge/🌐%20Website-GitHub%20Pages-blue"/></a>&nbsp;&nbsp;<a href="https://arxiv.org/abs/2607.20327"><img src="https://img.shields.io/badge/📄%20Paper-arXiv-red"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/pyromind"><img src="https://img.shields.io/badge/🤗%20HuggingFace-pyromind-yellow"/></a>
 
 ---
 
 ## 🔥 Updates
 
+- **2026-07-23**：论文发布于 [arXiv:2607.20327](https://arxiv.org/abs/2607.20327)。
 - **2026-07-22**：发布项目主页、数学评测代码、[EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k)，以及模型（见 [Hugging Face · pyromind](https://huggingface.co/pyromind)：[SFT](https://huggingface.co/pyromind/PyroDash-4B-SFT)、[GRPO λ=0.05](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.05)、[GRPO λ=0.6](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.6)）。Milestone 1 数学评测闭环基本完成；Collaborate Engine 与一键复现仍在进行中。
 
 ---
@@ -108,7 +109,7 @@ Tokenizer 必须包含特殊 token `<|llm_offload|>`。
 | 资源 | 链接 |
 |------|------|
 | 项目官网 | [PyroMind-Dynamics.github.io/pyroDash](https://PyroMind-Dynamics.github.io/pyroDash/) |
-| 论文 | Preprint — 见 [Citation](#-citation) |
+| 论文 | [arXiv:2607.20327](https://arxiv.org/abs/2607.20327) |
 | 数据集（EasyHard-24K） | [huggingface.co/datasets/pyromind/easyhard-24k](https://huggingface.co/datasets/pyromind/easyhard-24k) |
 | Hugging Face 组织 | [huggingface.co/pyromind](https://huggingface.co/pyromind) |
 
@@ -119,11 +120,14 @@ Tokenizer 必须包含特殊 token `<|llm_offload|>`。
 如果本工作对你有帮助，请引用：
 
 ```bibtex
-@misc{pyrodash2026,
-  title        = {PyroDash: Cost-Efficient Token-Level Small-Large Model Collaborative Inference},
-  author       = {{PyroMind Dynamics}},
+@misc{lyu2026pyrodash,
+  title        = {PyroDash: Cost-Efficient Token-Level Small-Large Language Model Collaborative Inference},
+  author       = {Niqi Lyu and Pengtao Shi and Wei Qiu and Jianlin Zhong and Sicong Xia and Jianyao Ma and Yicheng Ding},
   year         = {2026},
-  note         = {Preprint}
+  eprint       = {2607.20327},
+  archivePrefix= {arXiv},
+  primaryClass = {cs.CL},
+  url          = {https://arxiv.org/abs/2607.20327}
 }
 ```
 
