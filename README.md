@@ -1,8 +1,8 @@
-# pyroDash
+# PyroDash
 
 **Language / 语言:** [English](README.md) | [中文](README_zh.md)
 
-<a href="https://PyroMind-Dynamics.github.io/pyroDash/"><img src="https://img.shields.io/badge/🌐%20Website-GitHub%20Pages-blue"/></a>&nbsp;&nbsp;<a href="https://arxiv.org/abs/2607.20327"><img src="https://img.shields.io/badge/📄%20Paper-arXiv-red"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/pyromind"><img src="https://img.shields.io/badge/🤗%20HuggingFace-pyromind-yellow"/></a>
+<a href="https://PyroMind-Dynamics.github.io/PyroDash/"><img src="https://img.shields.io/badge/🌐%20Website-GitHub%20Pages-blue"/></a>&nbsp;&nbsp;<a href="https://arxiv.org/abs/2607.20327"><img src="https://img.shields.io/badge/📄%20Paper-arXiv-red"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/pyromind"><img src="https://img.shields.io/badge/🤗%20HuggingFace-pyromind-yellow"/></a>
 
 ---
 
@@ -39,8 +39,8 @@ During training, PyroDash follows a three-stage progressive optimization pipelin
 ### 1. Setup
 
 ```bash
-git clone https://github.com/PyroMind-Dynamics/pyroDash.git
-cd pyroDash
+git clone https://github.com/PyroMind-Dynamics/PyroDash.git
+cd PyroDash
 pip install -r requirements.txt
 ```
 
@@ -108,7 +108,7 @@ Tokenizer must include the special token `<|llm_offload|>`.
 
 | Resource | Link |
 |----------|------|
-| Project website | [PyroMind-Dynamics.github.io/pyroDash](https://PyroMind-Dynamics.github.io/pyroDash/) |
+| Project website | [PyroMind-Dynamics.github.io/PyroDash](https://PyroMind-Dynamics.github.io/PyroDash/) |
 | Paper | [arXiv:2607.20327](https://arxiv.org/abs/2607.20327) |
 | Dataset (EasyHard-24K) | [huggingface.co/datasets/pyromind/easyhard-24k](https://huggingface.co/datasets/pyromind/easyhard-24k) |
 | Hugging Face org | [huggingface.co/pyromind](https://huggingface.co/pyromind) |
