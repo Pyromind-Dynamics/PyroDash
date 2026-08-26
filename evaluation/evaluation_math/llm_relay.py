@@ -5,7 +5,9 @@ DashScope / offload-continuation path used by ``benchmark_relay.py``.
 
 from __future__ import annotations
 
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -13,29 +15,40 @@ from tqdm import tqdm
 
 OFFLOAD_TAG = "<|llm_offload|>"
 REDIRECT_END = "<|im_end|>"
-
-DEFAULT_REMOTE_HANDOFF_PROMPT = (
-    "You are a helpful assistant completing a task that was partially solved "
-    "by a smaller local model before offload.\n"
-    "Collaborative handoff protocol:\n"
-    "- The assistant message may contain <part_think>...</part_think> with reasoning "
-    "the small model already produced before offload.\n"
-    "- Because part of the reasoning is already in <part_think>, continue from "
-    "where it stopped: your reasoning channel should pick up at the first "
-    "unresolved step and carry forward to the final answer. Do not repeat, "
-    "paraphrase, or re-derive anything already present in <part_think>.\n"
-    "- If <part_think> already concludes the task, proceed directly to the final answer.\n"
-    "- Put the user-facing answer only in normal assistant content. Never quote "
-    "or mention <part_think> to the user.\n"
-    "- <part_think> is an internal marker, not user input."
+OFFLOAD_LEVEL_RE = re.compile(
+    r"<\|llm_offload\|>([0-9])<\|/llm_offload\|>"
 )
 
+DEFAULT_REMOTE_HANDOFF_PROMPT = (
+    Path(__file__).resolve().parents[1] / "prompts" / "llm_system_prompt.md"
+).read_text(encoding="utf-8").strip()
 
-def _offload_prefix(raw: str) -> str:
+
+def _extract_offload_level(text: str) -> int:
+    match = OFFLOAD_LEVEL_RE.search(text)
+    return int(match.group(1)) if match else -1
+
+
+def _thinking_config(level: int) -> tuple[bool, str | None]:
+    """Map an offload level to the remote model's thinking configuration."""
+    if level < 0:
+        level = 1
+    if level == 0:
+        return False, None
+    if level <= 3:
+        return True, "low"
+    if level <= 6:
+        return True, "high"
+    return True, "max"
+
+
+def _offload_prefix(raw: str) -> tuple[str, int]:
     """Text before ``OFFLOAD_TAG`` (tag and redirect markers removed)."""
     offload_idx = raw.find(OFFLOAD_TAG)
     prefix = raw[:offload_idx] if offload_idx >= 0 else raw
-    return prefix.replace(OFFLOAD_TAG, "").replace(REDIRECT_END, "")
+    offload_level = _extract_offload_level(raw)
+    clean_prefix = prefix.replace(OFFLOAD_TAG, "").replace(REDIRECT_END, "")
+    return clean_prefix, offload_level
 
 
 def _extract_user_content(prompt: Any) -> str:
@@ -73,10 +86,14 @@ def _llm_max_tokens(total_budget: int, completion_ids: list[Any] | None, idx: in
     return max(0, total_budget - _completion_token_count(completion_ids, idx))
 
 
-def _build_offload_messages(prompt: Any, response: str) -> list[dict[str, str]]:
+def _build_offload_messages(
+    prompt: Any, response: str
+) -> tuple[list[dict[str, str]], bool, str | None]:
     """Build DashScope chat messages for assistant continuation after offload tag."""
     user_content = _extract_user_content(prompt)
-    assistant_partial = _offload_prefix(response).strip()
+    assistant_partial, offload_level = _offload_prefix(response)
+    assistant_partial = assistant_partial.strip()
+    enable_thinking, thinking_level = _thinking_config(offload_level)
 
     messages: list[dict[str, str]] = [
         {"role": "system", "content": DEFAULT_REMOTE_HANDOFF_PROMPT},
@@ -93,7 +110,7 @@ def _build_offload_messages(prompt: Any, response: str) -> list[dict[str, str]]:
                 ),
             }
         )
-    return messages
+    return messages, enable_thinking, thinking_level
 
 
 def _call_dashscope_chat(
@@ -105,6 +122,7 @@ def _call_dashscope_chat(
     max_tokens: int,
     timeout: float = 600.0,
     enable_thinking: bool = True,
+    thinking_level: str | None = None,
 ) -> tuple[str, str, dict[str, Any] | None]:
     if not api_key:
         return "[Error: DASHSCOPE_API_KEY not set]", "", None
@@ -114,11 +132,15 @@ def _call_dashscope_chat(
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    chat_template_kwargs: dict[str, Any] = {"enable_thinking": enable_thinking}
+    if enable_thinking and thinking_level is not None:
+        chat_template_kwargs["thinking_level"] = thinking_level
+
     body = {
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
-        "chat_template_kwargs": {"enable_thinking": enable_thinking},
+        "chat_template_kwargs": chat_template_kwargs,
     }
 
     try:
@@ -156,17 +178,23 @@ def _complete_offload_response(
     if OFFLOAD_TAG not in response or max_tokens <= 0:
         return response, None
 
-    messages = _build_offload_messages(prompt, response)
+    messages, tag_enable_thinking, thinking_level = _build_offload_messages(
+        prompt, response
+    )
+    tag_enable_thinking = enable_thinking and tag_enable_thinking
+    if not tag_enable_thinking:
+        thinking_level = None
     generated, think, usage = _call_dashscope_chat(
         messages,
         api_key=api_key,
         base_url=base_url,
         model=model,
         max_tokens=max_tokens,
-        enable_thinking=enable_thinking,
+        enable_thinking=tag_enable_thinking,
+        thinking_level=thinking_level,
     )
 
-    prefix = _offload_prefix(response)
+    prefix, _ = _offload_prefix(response)
     res = (
         "<think>"
         + prefix.replace("<think>", "").replace("</think>", "")

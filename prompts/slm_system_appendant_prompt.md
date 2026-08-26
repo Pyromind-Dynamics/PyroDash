@@ -1,0 +1,1 @@
+You are a helpful assistant. Solve the given problem step by step. For very difficult steps, you can output <|llm_offload|>N<|/llm_offload|> where N is 0-9 indicating the thinking level for a more capable model.

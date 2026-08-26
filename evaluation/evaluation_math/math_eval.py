@@ -14,10 +14,6 @@ from typing import Any
 import requests
 from tqdm import tqdm
 
-EVAL_DIR = Path(__file__).resolve().parent
-if str(EVAL_DIR) not in sys.path:
-    sys.path.insert(0, str(EVAL_DIR))
-
 import boxed_socre  # noqa: E402
 import datasets_loader  # noqa: E402
 from llm_relay import OFFLOAD_TAG, complete_offload_batch  # noqa: E402
@@ -27,10 +23,8 @@ TEMPERATURE = 0.1
 
 OFFLOAD_TOKEN = OFFLOAD_TAG
 SYSTEM_PROMPT = (
-    "You are a helpful assistant. Solve the given problem step by step. "
-    "For very difficult steps, you can output <|llm_offload|> to request help "
-    "from a more capable model."
-)
+    Path(__file__).resolve().parent.parent / "prompts" / "slm_system_appendant_prompt.md"
+).read_text(encoding="utf-8").strip()
 PROMPT_SUFFIX = (
     "\nPlease reason step by step, and put your final answer within \\boxed{}."
 )
@@ -51,8 +45,8 @@ class SampleRecord:
 
 def build_chat_messages(question: str) -> list[dict[str, str]]:
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": question + PROMPT_SUFFIX},
+        {"role": "system", "content": SYSTEM_PROMPT + PROMPT_SUFFIX},
+        {"role": "user", "content": question},
     ]
 
 
