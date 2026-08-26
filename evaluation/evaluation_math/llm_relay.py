@@ -13,7 +13,7 @@ from typing import Any
 import requests
 from tqdm import tqdm
 
-OFFLOAD_TAG = "<|llm_offload|>"
+OFFLOAD_TAG = "<|/llm_offload|>"
 REDIRECT_END = "<|im_end|>"
 OFFLOAD_LEVEL_RE = re.compile(
     r"<\|llm_offload\|>([0-9])<\|/llm_offload\|>"
