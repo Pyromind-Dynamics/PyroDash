@@ -13,7 +13,8 @@ from typing import Any
 import requests
 from tqdm import tqdm
 
-OFFLOAD_TAG = "<|/llm_offload|>"
+OFFLOAD_TAG = "<|llm_offload|>"
+OFFLOAD_END_TAG = "<|/llm_offload|>"
 REDIRECT_END = "<|im_end|>"
 OFFLOAD_LEVEL_RE = re.compile(
     r"<\|llm_offload\|>([0-9])<\|/llm_offload\|>"
@@ -47,7 +48,11 @@ def _offload_prefix(raw: str) -> tuple[str, int]:
     offload_idx = raw.find(OFFLOAD_TAG)
     prefix = raw[:offload_idx] if offload_idx >= 0 else raw
     offload_level = _extract_offload_level(raw)
-    clean_prefix = prefix.replace(OFFLOAD_TAG, "").replace(REDIRECT_END, "")
+    clean_prefix = (
+        prefix.replace(OFFLOAD_TAG, "")
+        .replace(OFFLOAD_END_TAG, "")
+        .replace(REDIRECT_END, "")
+    )
     return clean_prefix, offload_level
 
 

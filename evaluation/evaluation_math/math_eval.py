@@ -16,12 +16,18 @@ from tqdm import tqdm
 
 import boxed_socre  # noqa: E402
 import datasets_loader  # noqa: E402
-from llm_relay import OFFLOAD_TAG, complete_offload_batch  # noqa: E402
+from llm_relay import (  # noqa: E402
+    OFFLOAD_END_TAG,
+    OFFLOAD_TAG,
+    complete_offload_batch,
+)
 
 SMALL_MAX_WORKERS = 256
 TEMPERATURE = 0.1
+SMALL_EVAL_LIMIT = 2
 
 OFFLOAD_TOKEN = OFFLOAD_TAG
+OFFLOAD_STOP = OFFLOAD_END_TAG
 SYSTEM_PROMPT = (
     Path(__file__).resolve().parent.parent / "prompts" / "slm_system_appendant_prompt.md"
 ).read_text(encoding="utf-8").strip()
@@ -86,7 +92,7 @@ def call_small_completion(
         "prompt": prompt,
         "temperature": TEMPERATURE,
         "max_tokens": max_tokens,
-        "stop": [OFFLOAD_TOKEN],
+        "stop": [OFFLOAD_STOP],
         "include_stop_str_in_output": True,
         "skip_special_tokens": False,
     }
@@ -96,12 +102,12 @@ def call_small_completion(
     choice = data["choices"][0]
     text = str(choice.get("text") or "")
     stop_reason = choice.get("stop_reason")
-    # safety: keep tag even if server omits it
-    if OFFLOAD_TOKEN not in text and (
-        stop_reason == OFFLOAD_TOKEN
-        or (isinstance(stop_reason, str) and OFFLOAD_TOKEN in stop_reason)
+    # Safety: keep the closing tag even if the server omits the stop string.
+    if OFFLOAD_STOP not in text and (
+        stop_reason == OFFLOAD_STOP
+        or (isinstance(stop_reason, str) and OFFLOAD_STOP in stop_reason)
     ):
-        text = text + OFFLOAD_TOKEN
+        text = text + OFFLOAD_STOP
     usage = normalize_usage(data.get("usage")) or {
         "prompt_tokens": 0,
         "completion_tokens": 0,
@@ -253,6 +259,7 @@ def run_dataset(
     result_path = output_dir / f"{dataset_name}_results.json"
     handler = datasets_loader.get_dataset_handler(dataset_name)
     questions, answers = handler.load_data()
+    questions, answers = questions[:SMALL_EVAL_LIMIT], answers[:SMALL_EVAL_LIMIT]
 
     t0 = time.perf_counter()
     raw_responses, completion_ids, small_usages = run_small_batch(
