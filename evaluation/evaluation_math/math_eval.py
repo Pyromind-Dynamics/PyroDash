@@ -1,4 +1,4 @@
-"""Offload benchmark: local small vLLM serve -> GLM relay -> score. Thinking always on."""
+"""Offload benchmark: local small vLLM serve -> LLM relay -> score. Thinking always on."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ class SampleRecord:
     has_offload: bool
     score: int
     qwen_usage: dict[str, int]
-    glm_usage: dict[str, int] | None
+    llm_usage: dict[str, int] | None
 
 
 def build_chat_messages(question: str) -> list[dict[str, str]]:
@@ -157,28 +157,28 @@ def run_small_batch(
     return raw_responses, completion_ids, usages
 
 
-def relay_with_glm(
+def relay_with_llm(
     raw_responses,
     questions,
     *,
     api_key,
     completion_ids,
-    glm_base_url: str,
-    glm_model: str,
-    glm_max_workers: int,
+    llm_base_url: str,
+    llm_model: str,
+    llm_max_workers: int,
     max_tokens: int,
 ):
     prompts = [build_chat_messages(q) for q in questions]
     n_off = sum(OFFLOAD_TOKEN in r for r in raw_responses)
-    print(f"[glm] relay {n_off}/{len(raw_responses)} via {glm_model} @ {glm_base_url}")
+    print(f"[llm] relay {n_off}/{len(raw_responses)} via {llm_model} @ {llm_base_url}")
     return complete_offload_batch(
         raw_responses,
         prompts,
         api_key=api_key,
-        base_url=glm_base_url,
-        model=glm_model,
+        base_url=llm_base_url,
+        model=llm_model,
         max_tokens=max_tokens,
-        max_workers=glm_max_workers,
+        max_workers=llm_max_workers,
         completion_ids=completion_ids,
         enable_thinking=True,
     )
@@ -190,7 +190,7 @@ def build_records(
     raw_responses,
     completed_responses,
     small_usages,
-    glm_usages,
+    llm_usages,
 ) -> list[SampleRecord]:
     records = []
     for idx, (question, answer, raw, completed) in enumerate(
@@ -209,7 +209,7 @@ def build_records(
                 has_offload=OFFLOAD_TOKEN in raw,
                 score=1 if boxed_socre.compare_answer(completed, answer) else 0,
                 qwen_usage=qwen_usage,
-                glm_usage=normalize_usage(glm_usages[idx] if idx < len(glm_usages) else None),
+                llm_usage=normalize_usage(llm_usages[idx] if idx < len(llm_usages) else None),
             )
         )
     return records
@@ -228,8 +228,8 @@ def summarize_records(dataset, records, wall_s) -> dict[str, Any]:
         "offload_rate": len(offload) / max(n, 1),
         "total_small_prompt_tokens": sum(r.qwen_usage["prompt_tokens"] for r in records),
         "total_small_completion_tokens": sum(r.qwen_usage["completion_tokens"] for r in records),
-        "total_glm_prompt_tokens": sum((r.glm_usage or {}).get("prompt_tokens", 0) for r in records),
-        "total_glm_completion_tokens": sum((r.glm_usage or {}).get("completion_tokens", 0) for r in records),
+        "total_llm_prompt_tokens": sum((r.llm_usage or {}).get("prompt_tokens", 0) for r in records),
+        "total_llm_completion_tokens": sum((r.llm_usage or {}).get("completion_tokens", 0) for r in records),
         "wall_s": wall_s,
         "correct": len(correct),
     }
@@ -251,9 +251,9 @@ def run_dataset(
     small_base_url: str,
     small_model: str,
     api_key: str,
-    glm_base_url: str,
-    glm_model: str,
-    glm_max_workers: int,
+    llm_base_url: str,
+    llm_model: str,
+    llm_max_workers: int,
     max_tokens: int,
 ) -> dict[str, Any]:
     result_path = output_dir / f"{dataset_name}_results.json"
@@ -270,27 +270,27 @@ def run_dataset(
     )
 
     completed = list(raw_responses)
-    glm_usages: list[dict[str, Any] | None] = [None] * len(raw_responses)
+    llm_usages: list[dict[str, Any] | None] = [None] * len(raw_responses)
     pending = [i for i, r in enumerate(raw_responses) if OFFLOAD_TOKEN in r]
 
     if pending:
-        print(f"[glm] relay {len(pending)}/{len(raw_responses)} samples")
-        sub_done, sub_usage = relay_with_glm(
+        print(f"[llm] relay {len(pending)}/{len(raw_responses)} samples")
+        sub_done, sub_usage = relay_with_llm(
             [raw_responses[i] for i in pending],
             [questions[i] for i in pending],
             api_key=api_key,
             completion_ids=[completion_ids[i] for i in pending],
-            glm_base_url=glm_base_url,
-            glm_model=glm_model,
-            glm_max_workers=glm_max_workers,
+            llm_base_url=llm_base_url,
+            llm_model=llm_model,
+            llm_max_workers=llm_max_workers,
             max_tokens=max_tokens,
         )
         for j, idx in enumerate(pending):
             completed[idx] = sub_done[j]
-            glm_usages[idx] = sub_usage[j]
+            llm_usages[idx] = sub_usage[j]
 
     records = build_records(
-        questions, answers, raw_responses, completed, small_usages, glm_usages,
+        questions, answers, raw_responses, completed, small_usages, llm_usages,
     )
     summary = summarize_records(dataset_name, records, time.perf_counter() - t0)
     result_path.parent.mkdir(parents=True, exist_ok=True)
@@ -316,15 +316,15 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=["math", "gsm8k", "minerva", "olympiad", "aime2024", "aime2025"],
     )
-    p.add_argument("--glm-base-url", required=True)
-    p.add_argument("--glm-api-key", required=True)
-    p.add_argument("--glm-model", required=True)
-    p.add_argument("--glm-max-workers", type=int, default=256)
+    p.add_argument("--llm-base-url", required=True)
+    p.add_argument("--llm-api-key", required=True)
+    p.add_argument("--llm-model", required=True)
+    p.add_argument("--llm-max-workers", type=int, default=256)
     p.add_argument(
         "--max-tokens",
         type=int,
         default=8192,
-        help="small max_tokens; also total completion budget for small+glm",
+        help="small max_tokens; also total completion budget for small+llm",
     )
     return p.parse_args()
 
@@ -343,8 +343,8 @@ def main() -> None:
 
     print(f"[config] model_path={model_path}")
     print(f"[config] small={args.small_base_url} model={args.small_model}")
-    print(f"[config] glm={args.glm_base_url} model={args.glm_model}")
-    print(f"[config] max_tokens={args.max_tokens} (small + glm budget)")
+    print(f"[config] llm={args.llm_base_url} model={args.llm_model}")
+    print(f"[config] max_tokens={args.max_tokens} (small + llm budget)")
     print(f"[config] output_dir={output_dir}")
     print(f"[config] datasets={args.datasets}")
 
@@ -358,10 +358,10 @@ def main() -> None:
                 tokenizer=tokenizer,
                 small_base_url=args.small_base_url,
                 small_model=args.small_model,
-                api_key=args.glm_api_key,
-                glm_base_url=args.glm_base_url,
-                glm_model=args.glm_model,
-                glm_max_workers=args.glm_max_workers,
+                api_key=args.llm_api_key,
+                llm_base_url=args.llm_base_url,
+                llm_model=args.llm_model,
+                llm_max_workers=args.llm_max_workers,
                 max_tokens=args.max_tokens,
             )
         )

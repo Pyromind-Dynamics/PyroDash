@@ -1,0 +1,8 @@
+# LLM sampling → chat.completions body (any key is forwarded).
+# Optional nested ``extra_body`` is flattened into the same request.
+#
+# Usage:
+#   python serve/serve_adapter.py --llm-config serve/config_yaml/llm.yaml ...
+
+temperature: 1.0
+top_p: 1.0

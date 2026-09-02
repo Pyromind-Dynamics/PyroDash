@@ -1,0 +1,14 @@
+agent:
+  cost_limit: 9999
+  wall_time_limit_seconds: 7000
+  step_limit: 150
+
+model:
+  model_name: "anthropic/slime_offload_mjy"
+  cost_tracking: "ignore_errors"
+  litellm_model_registry: "../registry.json"
+  model_kwargs:
+    api_base: "http://127.0.0.1:18022"
+    api_key: "swe-run-offload"
+    drop_params: true
+    timeout: 300

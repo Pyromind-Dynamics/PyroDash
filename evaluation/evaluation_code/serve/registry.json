@@ -1,0 +1,12 @@
+{
+  "anthropic/slime_offload_mjy": {
+    "max_tokens": 128000,
+    "max_input_tokens": 119808,
+    "max_output_tokens": 128000,
+    "input_cost_per_token": 0.0,
+    "output_cost_per_token": 0.0,
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "supports_function_calling": true
+  }
+}

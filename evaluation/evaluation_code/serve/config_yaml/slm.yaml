@@ -1,0 +1,12 @@
+# SLM sampling → chat.completions body (any key is forwarded).
+# Optional nested ``extra_body`` is flattened into the same request.
+#
+# Usage:
+#   python serve/serve_adapter.py --slm-config serve/config_yaml/slm.yaml ...
+
+temperature: 0.6
+top_p: 0.95
+top_k: 20
+min_p: 0.0
+presence_penalty: 0.0
+repetition_penalty: 1.0
