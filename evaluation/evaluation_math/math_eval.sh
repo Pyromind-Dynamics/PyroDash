@@ -2,7 +2,7 @@
 set -euo pipefail
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-MODEL=/path/to/your/merged_model
+MODEL=/path/to/your/slm_model
 
 # ---------- 1) start vLLM (small model) ----------
 CUDA_VISIBLE_DEVICES=0 vllm serve "$MODEL" \
@@ -29,10 +29,10 @@ python "$(dirname "$0")/math_eval.py" \
   --small-model small-model \
   --output-dir ./results_500 \
   --datasets gsm8k minerva olympiad aime2024 aime2025 \
-  --glm-base-url http://your-glm-host:8000/v1 \
-  --glm-api-key your-glm-api-key \
-  --glm-model your-glm-model \
-  --max-tokens 8192   # small max_tokens; also total completion budget for small+glm
+  --llm-base-url http://your-llm-host:8000/v1 \
+  --llm-api-key your-llm-api-key \
+  --llm-model your-llm-model \
+  --max-tokens 8192   # small max_tokens; also total completion budget for small+llm
 
 # ---------- 3) stop vLLM ----------
 trap - EXIT

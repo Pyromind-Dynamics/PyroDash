@@ -1,4 +1,4 @@
-"""GLM offload relay helpers for evaluation.
+"""LLM offload relay helpers for evaluation.
 
 DashScope / offload-continuation path used by ``benchmark_relay.py``.
 """
@@ -68,8 +68,8 @@ def _completion_token_count(completion_ids: list[Any] | None, idx: int) -> int:
     return int(ids)
 
 
-def _glm_max_tokens(total_budget: int, completion_ids: list[Any] | None, idx: int) -> int:
-    """GLM ``max_tokens`` = frontend total budget minus small-model completion length."""
+def _llm_max_tokens(total_budget: int, completion_ids: list[Any] | None, idx: int) -> int:
+    """LLM ``max_tokens`` = frontend total budget minus small-model completion length."""
     return max(0, total_budget - _completion_token_count(completion_ids, idx))
 
 
@@ -189,7 +189,7 @@ def complete_offload_batch(
     completion_ids: list[Any] | None = None,
     enable_thinking: bool = True,
 ) -> tuple[list[str], list[dict[str, Any] | None]]:
-    """Relay samples that contain ``OFFLOAD_TAG`` via GLM; others pass through."""
+    """Relay samples that contain ``OFFLOAD_TAG`` via LLM; others pass through."""
     indices = [i for i, resp in enumerate(responses) if OFFLOAD_TAG in resp]
     completed = list(responses)
     usages: list[dict[str, Any] | None] = [None] * len(responses)
@@ -200,14 +200,14 @@ def complete_offload_batch(
     total = len(indices)
 
     def _run(idx: int) -> tuple[int, str, dict[str, Any] | None]:
-        glm_max_tokens = _glm_max_tokens(max_tokens, completion_ids, idx)
+        llm_max_tokens = _llm_max_tokens(max_tokens, completion_ids, idx)
         full, usage = _complete_offload_response(
             responses[idx],
             prompts[idx],
             api_key=api_key,
             base_url=base_url,
             model=model,
-            max_tokens=glm_max_tokens,
+            max_tokens=llm_max_tokens,
             sample_idx=idx,
             enable_thinking=enable_thinking,
         )
@@ -218,7 +218,7 @@ def complete_offload_batch(
         for future in tqdm(
             as_completed(futures),
             total=total,
-            desc="[glm] relay",
+            desc="[llm] relay",
             unit="sample",
         ):
             idx, full, usage = future.result()

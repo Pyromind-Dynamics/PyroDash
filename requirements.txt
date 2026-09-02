@@ -14,3 +14,9 @@ pandas
 datasets
 openai>=1.40.0
 httpx>=0.27.0
+
+# evaluation_code (SWE-bench + offload adapter)
+aiohttp>=3.9.0
+docker>=7.0.0
+swebench
+mini-swe-agent
