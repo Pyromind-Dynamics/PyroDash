@@ -94,7 +94,7 @@ def _load_sampling_yaml(path: str | Path) -> dict[str, Any]:
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--host", default=os.environ.get("ADAPTER_HOST", "0.0.0.0"))
+    p.add_argument("--host", default=os.environ.get("ADAPTER_HOST", "127.0.0.1"))
     p.add_argument("--port", type=int, default=int(os.environ.get("ADAPTER_PORT", "18022")))
     p.add_argument("--slm-base-url", default=os.environ.get("SLM_BASE_URL", "http://127.0.0.1:8001/v1"))
     p.add_argument("--slm-api-key", default=os.environ.get("SLM_API_KEY", "dummy"))

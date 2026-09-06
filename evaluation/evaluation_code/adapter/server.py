@@ -56,7 +56,7 @@ def _stable_instance_sid(body: dict, base: str) -> str:
             parts.append(f"{role}:{str(msg.get('content') or '')[:2000]}")
             if role == "user":
                 break
-    digest = hashlib.sha1("\n".join(parts).encode("utf-8", errors="replace")).hexdigest()[:16]
+    digest = hashlib.sha256("\n".join(parts).encode("utf-8", errors="replace")).hexdigest()[:16]
     return f"{base}-{digest}"
 
 
