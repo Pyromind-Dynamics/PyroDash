@@ -2,7 +2,7 @@
 
 **Language / 语言:** [English](README.md) | [中文](README_zh.md)
 
-![](https://img.shields.io/badge/🌐%20Website-GitHub%20Pages-blue)  ![](https://img.shields.io/badge/📄%20Paper-arXiv-red)  ![](https://img.shields.io/badge/🤗%20HuggingFace-pyromind-yellow)
+<a href="https://PyroMind-Dynamics.github.io/PyroDash/"><img src="https://img.shields.io/badge/🌐%20Website-GitHub%20Pages-blue"/></a>&nbsp;&nbsp;<a href="https://arxiv.org/abs/2607.20327"><img src="https://img.shields.io/badge/📄%20Paper-arXiv-red"/></a>&nbsp;&nbsp;<a href="https://huggingface.co/pyromind"><img src="https://img.shields.io/badge/🤗%20HuggingFace-pyromind-yellow"/></a>
 
 ---
 
