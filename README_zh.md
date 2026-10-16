@@ -11,6 +11,23 @@
 - **2026-07-23**：论文发布于 [arXiv:2607.20327](https://arxiv.org/abs/2607.20327)。
 - **2026-07-22**：发布项目主页、数学评测代码、[EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k)，以及模型（见 [Hugging Face · pyromind](https://huggingface.co/pyromind)：[SFT](https://huggingface.co/pyromind/PyroDash-4B-SFT)、[GRPO λ=0.05](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.05)、[GRPO λ=0.6](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.6)）。Milestone 1 数学评测闭环基本完成；Collaborate Engine 与一键复现仍在进行中。
 
+## 📊 Results
+
+
+| Agentic-Preview                                                                              | Math                                                                       |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| ![Cost–Accuracy Pareto (Agentic-Preview)](./docs/assets/fig_cost_accuracy_pareto_coding.png) | ![Cost–Accuracy Pareto (Math)](./docs/assets/fig_cost_accuracy_pareto.png) |
+
+
+> [!IMPORTANT]
+> **Agentic-Preview 更新**
+>
+> - 控制符由 `<|llm_offload|>` 升级为 `<|llm_offload|>N<|/llm_offload|>`，其中 N 为 0–9 的整数，用于在转交更强模型时选择 thinking level（更细粒度的 agentic coding 协作）。
+> - 第二阶段训练由单独的 offload SFT 升级为 **SFT + OPD**，强化 agentic coding 轨迹上的冷启动 offload 策略。
+> - Agentic coding 训练数据集：**ScaleSWE**、**TMax**。
+> - 评测方式：见 [`evaluation/evaluation_code/swe-bench/README.md`](evaluation/evaluation_code/swe-bench/README.md)
+> - 更多细节后续发布。
+
 ---
 
 <table>
@@ -66,6 +83,18 @@ bash evaluation/math_eval.sh
 | `--datasets` | 评测集（空格分隔） | `gsm8k minerva olympiad aime2024 aime2025` |
 
 Tokenizer 必须包含特殊 token `<|llm_offload|>`。
+
+### 3. Code Offload API（`offload/offload_code`）
+
+独立的 SLM+LLM adapter（tag / entropy）。先起 API，再让任意客户端（SWE-bench、网页端等）把 `api_base` 指过去：
+
+```bash
+# 在 api.sh 顶部填写 MODEL_PATH / LLM_* / 端口后：
+bash offload/offload_code/tag/api.sh
+# 或：bash offload/offload_code/entropy/api.sh
+```
+
+详见 [`offload/offload_code/README.md`](offload/offload_code/README.md)。SWE-bench 评测：[`evaluation/evaluation_code/swe-bench/README.md`](evaluation/evaluation_code/swe-bench/README.md)。
 
 ---
 

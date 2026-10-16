@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PyroDash · Coding Eval</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="top">
+      <div class="brand">
+        <span class="brand-mark">PyroDash</span>
+        <span class="brand-sub">Coding Eval</span>
+      </div>
+      <nav class="tabs" role="tablist">
+        <button type="button" class="tab active" data-tab="run">发起评测</button>
+        <button type="button" class="tab" data-tab="history">历史结果</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="panel-run" class="panel active">
+        <h1>swe_20filter</h1>
+        <p class="lede">起 offload adapter，跑 SWE-bench representative 20 题，结果写入 <code>run_use/output</code>。</p>
+
+        <form id="run-form" class="form">
+          <fieldset>
+            <legend>模式</legend>
+            <label>
+              MODE
+              <select name="mode" disabled>
+                <option value="swe_20filter" selected>swe_20filter</option>
+              </select>
+            </label>
+            <label>
+              ROUTER
+              <select name="router_mode">
+                <option value="tag" selected>tag</option>
+                <option value="entropy">entropy</option>
+              </select>
+            </label>
+            <label>
+              OFFLOAD_MODE
+              <select name="offload_mode">
+                <option value="handoff" selected>handoff</option>
+                <option value="rewrite">rewrite</option>
+                <option value="keep">keep</option>
+              </select>
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>SLM（二选一）</legend>
+            <label class="full">
+              MODEL_PATH（本地权重目录）
+              <input name="model_path" type="text" placeholder="/path/to/checkpoint_hf" />
+            </label>
+            <div class="or">或远程 API</div>
+            <label>
+              SLM_BASE_URL
+              <input name="slm_base_url" type="text" placeholder="http://host:8000/v1" />
+            </label>
+            <label>
+              SLM_MODEL
+              <input name="slm_model" type="text" placeholder="model-name" />
+            </label>
+            <label>
+              SLM_API_KEY
+              <input name="slm_api_key" type="text" value="dummy" />
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>LLM</legend>
+            <label class="full">
+              LLM_BASE_URL
+              <input name="llm_base_url" type="text" required placeholder="https://api.example.com/v1" />
+            </label>
+            <label>
+              LLM_MODEL
+              <input name="llm_model" type="text" required />
+            </label>
+            <label>
+              LLM_API_KEY
+              <input name="llm_api_key" type="password" required />
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>端口与并行</legend>
+            <label>
+              ADAPTER_PORT
+              <input name="adapter_port" type="number" value="18027" />
+            </label>
+            <label>
+              VLLM_PORT
+              <input name="vllm_port" type="number" value="8007" />
+            </label>
+            <label>
+              WORKERS
+              <input name="workers" type="number" value="4" />
+            </label>
+            <label>
+              HARNESS_WORKERS
+              <input name="harness_workers" type="number" value="8" />
+            </label>
+            <label>
+              CUDA_VISIBLE_DEVICES
+              <input name="cuda_visible_devices" type="text" value="0" />
+            </label>
+            <label>
+              RUN_ID（可空，自动生成）
+              <input name="run_id" type="text" placeholder="swe20_YYYYMMDD_HHMMSS" />
+            </label>
+          </fieldset>
+
+          <div class="actions">
+            <button type="submit" class="btn primary" id="btn-start">开始评测</button>
+            <span id="form-error" class="error" hidden></span>
+          </div>
+        </form>
+
+        <div id="progress" class="progress" hidden>
+          <div class="progress-head">
+            <h2>进度</h2>
+            <span id="progress-run-id" class="mono"></span>
+          </div>
+          <div class="phase-row">
+            <span class="phase-label">phase</span>
+            <span id="progress-phase" class="phase-badge">—</span>
+            <span id="progress-message" class="muted"></span>
+          </div>
+          <div class="log-tabs">
+            <button type="button" class="log-tab active" data-log="eval">eval.log</button>
+            <button type="button" class="log-tab" data-log="adapter_api">adapter_api.log</button>
+            <button type="button" class="log-tab" data-log="web_launch">web_launch.log</button>
+          </div>
+          <pre id="progress-log" class="log"></pre>
+          <div id="progress-done" class="done-box" hidden>
+            <p>评测结束。可在「历史结果」查看摘要与文件。</p>
+            <button type="button" class="btn" id="btn-view-results">查看结果</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="panel-history" class="panel">
+        <div class="history-head">
+          <h1>历史结果</h1>
+          <button type="button" class="btn" id="btn-refresh">刷新</button>
+        </div>
+        <ul id="run-list" class="run-list"></ul>
+        <div id="result-detail" class="result-detail" hidden>
+          <h2 id="result-title"></h2>
+          <div id="result-summary" class="summary"></div>
+          <h3>文件</h3>
+          <ul id="result-files" class="file-list"></ul>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

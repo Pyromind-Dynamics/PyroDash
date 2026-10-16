@@ -11,6 +11,23 @@
 - **2026-07-23**: Paper on [arXiv:2607.20327](https://arxiv.org/abs/2607.20327).
 - **2026-07-22**: Release project page, math evaluation code, [EasyHard-24K](https://huggingface.co/datasets/pyromind/easyhard-24k), and models on [Hugging Face · pyromind](https://huggingface.co/pyromind) ([SFT](https://huggingface.co/pyromind/PyroDash-4B-SFT), [GRPO λ=0.05](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.05), [GRPO λ=0.6](https://huggingface.co/pyromind/PyroDash-4B-GRPO-Lambda-0.6)). Milestone 1 math eval loop largely done; Collaborate Engine & one-click reproduce still in progress.
 
+## 📊 Results
+
+
+| Agentic-Preview                                                                              | Math                                                                       |
+| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| ![Cost–Accuracy Pareto (Agentic-Preview)](./docs/assets/fig_cost_accuracy_pareto_coding.png) | ![Cost–Accuracy Pareto (Math)](./docs/assets/fig_cost_accuracy_pareto.png) |
+
+
+> [!IMPORTANT]
+> **Agentic-Preview changes**
+>
+> - Control token upgraded from `<|llm_offload|>` to `<|llm_offload|>N<|/llm_offload|>`, where N is an integer in 0–9 that selects the thinking level when handing off to a more capable model (finer-grained agentic coding collaboration).
+> - Stage 2 training updated from offload SFT alone to **SFT + OPD**, improving the cold-start offload policy for agentic coding trajectories.
+> - Agentic coding training datasets: **ScaleSWE**, **TMax**.
+> - Evaluation: see [`evaluation/evaluation_code/swe-bench/README.md`](evaluation/evaluation_code/swe-bench/README.md)
+> - More details will be released later.
+
 ---
 
 <table>
@@ -66,6 +83,18 @@ The script (1) starts a local **vLLM** server for the small model on port `8001`
 | `--datasets` | Benchmarks (space-separated) | `gsm8k minerva olympiad aime2024 aime2025` |
 
 Tokenizer must include the special token `<|llm_offload|>`.
+
+### 3. Code offload API (`offload/offload_code`)
+
+Standalone SLM+LLM adapter (tag or entropy). Start the API, then point any client (SWE-bench, web UI, …) at `api_base`:
+
+```bash
+# edit MODEL_PATH / LLM_* / ports in the config block, then:
+bash offload/offload_code/tag/api.sh
+# or: bash offload/offload_code/entropy/api.sh
+```
+
+See [`offload/offload_code/README.md`](offload/offload_code/README.md). SWE-bench client: [`evaluation/evaluation_code/swe-bench/README.md`](evaluation/evaluation_code/swe-bench/README.md).
 
 ---
 

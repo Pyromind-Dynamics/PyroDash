@@ -1,0 +1,17 @@
+# Generated at runtime by eval.sh — do not edit api_base by hand.
+# Placeholders: __API_BASE__  (must be http://host:port/v1 for OpenAI chat.completions)
+agent:
+  cost_limit: 9999
+  wall_time_limit_seconds: 7000
+  step_limit: 150
+
+model:
+  model_name: "openai/pyrodash_code"
+  cost_tracking: "ignore_errors"
+  litellm_model_registry: "registry.json"
+  model_kwargs:
+    custom_llm_provider: "openai"
+    api_base: "__API_BASE__"
+    api_key: "swe-run-offload"
+    drop_params: true
+    timeout: 300
