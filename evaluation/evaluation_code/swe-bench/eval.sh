@@ -122,10 +122,13 @@ if [[ -n "${INSTANCE_FILTER}" ]]; then
   echo "[eval] INSTANCE_FILTER=${INSTANCE_FILTER}"
 fi
 
+ENV_TESTBED_YAML="${CONFIG_DIR}/env_testbed_path.yaml"
 echo "[eval] mini-extra swebench → ${OUT_DIR}"
+echo "[eval] env overlay: ${ENV_TESTBED_YAML}"
 mini-extra swebench \
   -c swebench.yaml \
   -c "${MODEL_YAML}" \
+  -c "${ENV_TESTBED_YAML}" \
   -c "model.litellm_model_registry=${REGISTRY_ABS}" \
   -c "environment.pull_timeout=7200" \
   -c "agent.step_limit=${STEP_LIMIT}" \

@@ -1,0 +1,10 @@
+# Agent shells must use login bash so image .bashrc runs `conda activate testbed`.
+# On docker-rt, `docker exec -e` is ignored, so PATH/BASH_ENV injection does not work;
+# `bash -c` stays on base `/opt/miniconda3/bin/python`. Use `bash -lc` instead.
+# Aligned with swe_run_offload/configs/env_testbed_path.yaml.
+environment:
+  interpreter: ["bash", "-lc"]
+  env:
+    PATH: /opt/miniconda3/envs/testbed/bin:/opt/miniconda3/condabin:/opt/miniconda3/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    CONDA_DEFAULT_ENV: testbed
+    CONDA_PREFIX: /opt/miniconda3/envs/testbed

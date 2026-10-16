@@ -18,7 +18,7 @@ bash eval.sh --host 10.0.0.1 --port 18027
 
 1. `GET /health` on the adapter
 2. Writes `output/runs/model.<host>.<port>.yaml` with OpenAI `api_base=http://host:port/v1` (`openai/pyrodash_code` → `/v1/chat/completions`)
-3. `mini-extra swebench` → `output/runs/preds.json`
+3. `mini-extra swebench`（叠加 `config/env_testbed_path.yaml`：`bash -lc` + testbed conda PATH，与 `swe_run_offload` 对齐）→ `output/runs/preds.json`
 4. Official harness via `run_harness.py` (Docker API timeout 300s) → `output/verified/`
 
 Token / offload stats stay on the adapter: `GET http://<host>:<port>/stats` and its `logs/.../adapter_stats/`.
