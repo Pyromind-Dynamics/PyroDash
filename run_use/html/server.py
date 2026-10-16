@@ -26,6 +26,16 @@ SUPPORTED_MODES = ("swe", "swe_20filter", "deepswe", "terminal")
 app = FastAPI(title="PyroDash run_use", version="0.2.0")
 
 
+@app.middleware("http")
+async def no_cache_ui_assets(request, call_next):
+    """Avoid reverse-proxy/CDN serving stale index/js/css after UI fixes."""
+    response = await call_next(request)
+    path = request.url.path
+    if path.endswith((".html", ".js", ".css")) or path in ("/", ""):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 class StartRunRequest(BaseModel):
     mode: str = Field(default="swe_20filter")
     router_mode: str = Field(default="tag")

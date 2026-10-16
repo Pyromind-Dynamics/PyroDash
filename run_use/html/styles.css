@@ -178,7 +178,8 @@ label.full {
 
 .mode-field[hidden],
 label[hidden],
-#offload-mode-label[hidden] {
+#offload-mode-label[hidden],
+.is-slm-only-hidden {
   display: none !important;
 }
 

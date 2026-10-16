@@ -2,6 +2,13 @@
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+  // Prefix for reverse-proxy mounts (e.g. /pub/jp-xxx/1/); local root stays "/".
+  const APP_BASE = (window.__APP_BASE__ || "/").replace(/\/?$/, "/");
+  function apiUrl(path) {
+    const p = String(path || "").replace(/^\//, "");
+    return APP_BASE + p;
+  }
+
   let pollTimer = null;
   let activeRunId = null;
   let activeLogKey = "live";
@@ -42,10 +49,14 @@
     const offloadLabel = $("#offload-mode-label");
     if (offloadLabel) {
       offloadLabel.hidden = slmOnly;
-      offloadLabel.style.display = slmOnly ? "none" : "";
+      offloadLabel.classList.toggle("is-slm-only-hidden", slmOnly);
+      offloadLabel.style.setProperty("display", slmOnly ? "none" : "", "important");
     }
     const offloadSelect = $("#offload-mode-select");
-    if (offloadSelect) offloadSelect.disabled = slmOnly;
+    if (offloadSelect) {
+      offloadSelect.disabled = slmOnly;
+      if (slmOnly) offloadSelect.value = "handoff";
+    }
     ["llm-base-url", "llm-model", "llm-api-key"].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -123,7 +134,7 @@
     const btn = $("#btn-start");
     btn.disabled = true;
     try {
-      const res = await fetch("/api/runs", {
+      const res = await fetch(apiUrl("/api/runs"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -187,7 +198,7 @@
 
   async function pollOnce(runId) {
     try {
-      const res = await fetch(`/api/runs/${encodeURIComponent(runId)}`);
+      const res = await fetch(apiUrl(`/api/runs/${encodeURIComponent(runId)}`));
       if (!res.ok) return;
       const data = await res.json();
       const phase = data.phase || data.status?.phase || "unknown";
@@ -222,7 +233,7 @@
     const list = $("#run-list");
     list.innerHTML = "<li class='muted'>加载中…</li>";
     try {
-      const res = await fetch("/api/runs");
+      const res = await fetch(apiUrl("/api/runs"));
       const data = await res.json();
       const runs = data.runs || [];
       if (!runs.length) {
@@ -338,7 +349,7 @@
     $("#preview-body").innerHTML =
       '<p class="muted">左侧按文件夹选文件；轨迹可在「对话 / JSON」间切换。</p>';
     try {
-      const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/results`);
+      const res = await fetch(apiUrl(`/api/runs/${encodeURIComponent(runId)}/results`));
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "failed");
       const s = data.summary || {};
@@ -406,10 +417,12 @@
     body.innerHTML = '<p class="muted">加载中…</p>';
     toggle.hidden = true;
     try {
-      const url = `/api/runs/${encodeURIComponent(runId)}/files/${filePath
-        .split("/")
-        .map(encodeURIComponent)
-        .join("/")}`;
+      const url = apiUrl(
+        `/api/runs/${encodeURIComponent(runId)}/files/${filePath
+          .split("/")
+          .map(encodeURIComponent)
+          .join("/")}`
+      );
       const res = await fetch(url);
       const text = await res.text();
       if (!res.ok) throw new Error(text || res.statusText);
