@@ -61,26 +61,22 @@ cd pyroDash
 pip install -r requirements.txt
 ```
 
-### 2. Run evaluation (`evaluation/math_eval.sh`)
+### 2. Math offload + evaluation
 
-Edit placeholders in [`evaluation/math_eval.sh`](evaluation/math_eval.sh), then:
+Start the math adapter (local vLLM on `8001` + adapter on `18031`), then run the thin eval client:
 
 ```bash
-bash evaluation/math_eval.sh
+# Terminal 1 — adapter (edit MODEL_PATH / LLM_*):
+MODEL_PATH=/path/to/your/merged_model \
+LLM_BASE_URL=http://your-llm-host/v1 LLM_API_KEY=... LLM_MODEL=... \
+  bash offload/offload_math/api.sh
+
+# Terminal 2 — benchmarks:
+bash evaluation/evaluation_math/math_eval.sh
 ```
 
-The script (1) starts a local **vLLM** server for the small model on port `8001`, (2) runs `math_eval.py`, and (3) stops vLLM on exit.
-
-#### Parameters
-
-| Variable / flag | Meaning | Example |
-|-----------------|---------|---------|
-| `MODEL` | Local merged model path (vLLM serve + tokenizer) | `/path/to/your/merged_model` |
-| `--glm-base-url` | OpenAI-compatible API for the large/relay model | `http://your-glm-host:8000/v1` |
-| `--glm-api-key` | API key for that endpoint | `your-glm-api-key` |
-| `--glm-model` | Served model name on the GLM side | `your-glm-model` |
-| `--output-dir` | Per-dataset JSON output directory | `./results_500` |
-| `--datasets` | Benchmarks (space-separated) | `gsm8k minerva olympiad aime2024 aime2025` |
+- Adapter: [`offload/offload_math/README.md`](offload/offload_math/README.md) — SLM `/completions` + bare `<|llm_offload|>` + LLM relay; `POST /v1/math/complete`
+- Eval client: [`evaluation/evaluation_math/README.md`](evaluation/evaluation_math/README.md) — datasets, `\boxed{}` scoring, JSON
 
 Tokenizer must include the special token `<|llm_offload|>`.
 

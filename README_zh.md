@@ -61,26 +61,22 @@ cd pyroDash
 pip install -r requirements.txt
 ```
 
-### 2. 运行评测（`evaluation/math_eval.sh`）
+### 2. 数学 Offload + 评测
 
-先修改 [`evaluation/math_eval.sh`](evaluation/math_eval.sh) 中的占位参数，再执行：
+先起数学 adapter（本地 vLLM `8001` + adapter `18031`），再跑评测客户端：
 
 ```bash
-bash evaluation/math_eval.sh
+# 终端 1 — adapter（填写 MODEL_PATH / LLM_*）：
+MODEL_PATH=/path/to/your/merged_model \
+LLM_BASE_URL=http://your-llm-host/v1 LLM_API_KEY=... LLM_MODEL=... \
+  bash offload/offload_math/api.sh
+
+# 终端 2 — 评测：
+bash evaluation/evaluation_math/math_eval.sh
 ```
 
-脚本流程：(1) 在本地 `8001` 端口用 **vLLM** 拉起小模型；(2) 运行 `math_eval.py`；(3) 结束时自动停止 vLLM。
-
-#### 参数说明
-
-| 变量 / 参数 | 含义 | 示例 |
-|-------------|------|------|
-| `MODEL` | 本地 merged 模型路径（给 vLLM serve + tokenizer） | `/path/to/your/merged_model` |
-| `--glm-base-url` | 大模型 / 接力模型的 OpenAI 兼容 API 地址 | `http://your-glm-host:8000/v1` |
-| `--glm-api-key` | 该接口的 API Key | `your-glm-api-key` |
-| `--glm-model` | GLM 侧已部署的模型名 | `your-glm-model` |
-| `--output-dir` | 各数据集 JSON 结果输出目录 | `./results_500` |
-| `--datasets` | 评测集（空格分隔） | `gsm8k minerva olympiad aime2024 aime2025` |
+- Adapter：[`offload/offload_math/README.md`](offload/offload_math/README.md) — 小模型 `/completions` + 裸 `<|llm_offload|>` + 大模型 relay；`POST /v1/math/complete`
+- 评测客户端：[`evaluation/evaluation_math/README.md`](evaluation/evaluation_math/README.md) — 数据集、`\boxed{}` 判分、JSON
 
 Tokenizer 必须包含特殊 token `<|llm_offload|>`。
 

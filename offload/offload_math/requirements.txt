@@ -1,0 +1,5 @@
+aiohttp>=3.9
+fastapi>=0.110
+requests>=2.31
+transformers>=4.40
+uvicorn>=0.27
