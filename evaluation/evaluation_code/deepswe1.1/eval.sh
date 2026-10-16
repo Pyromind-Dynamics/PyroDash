@@ -10,7 +10,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT_DIR="${SCRIPT_DIR}/output"
+# If EVAL_OUTPUT_DIR is set, redirect Pier job output there (for run_use pipelines).
+OUT_DIR="${EVAL_OUTPUT_DIR:-${SCRIPT_DIR}/output}"
 mkdir -p "${OUT_DIR}"
 
 detect_host_ip() {
@@ -50,6 +51,7 @@ Options:
   -h, --help           Show this help
 
 Env:
+  EVAL_OUTPUT_DIR             if set, write Pier jobs under this directory
   TASKS_DIR / DEEPSWE_TASKS   Path to deep-swe tasks/ (required)
   SAMPLE_SEED                 Default 0 (with -l)
   MODEL_NAME                  Default openai/pyrodash_code

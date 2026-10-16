@@ -374,22 +374,18 @@ class OffloadAdapter:
             last_offload_n = n
 
             if not self.use_llm:
-                abort_without_llm = True
-                offloaded = True
+                # SLM-only: strip residual offload markers and continue (do not abort).
+                offloaded = False
+                last_offload_n = n
+                content = ol._strip_offload_tag_from_text(slm_content or "")
+                think = ol._strip_offload_tag_from_text(slm_think or raw_output or "")
+                tool_calls = list(slm_tool_calls or [])
                 logger.info(
-                    "sid=%s offload abort (use_llm=false) N=%d slm_len=%d (%.1fs)",
+                    "sid=%s offload ignored (use_llm=false) N=%d → continue SLM-only (%.1fs)",
                     sid,
                     n,
-                    len(raw_output),
                     time.monotonic() - t0,
                 )
-                content = (
-                    "[offload-abort] Valid <|llm_offload|> detected; "
-                    "use_llm=false so the large model was not called and this run stops."
-                )
-                think = slm_think or raw_output
-                tool_calls = []
-                self.closed.add(sid)
             else:
                 if self.offload_mode == "rewrite":
                     messages = openai_messages
@@ -528,7 +524,8 @@ class OffloadAdapter:
         """OpenAI Chat Completions — preserves reasoning_content across turns."""
         body = await request.json()
         fold_mid_list_system_into_user(body)
-        if self.offload_mode == "handoff":
+        # Only teach the model about offload when LLM handoff is enabled.
+        if self.use_llm and self.offload_mode == "handoff":
             ol.inject_offload_into_request_body(body)
 
         begun = self._begin_turn(request, body)
@@ -586,7 +583,7 @@ class OffloadAdapter:
         """Anthropic Messages (back-compat). Prefer /v1/chat/completions for eval."""
         body = await request.json()
         fold_mid_list_system_into_user(body)
-        if self.offload_mode == "handoff":
+        if self.use_llm and self.offload_mode == "handoff":
             ol.inject_offload_into_request_body(body)
 
         begun = self._begin_turn(request, body)

@@ -40,6 +40,11 @@ code, .mono {
   padding: 1.5rem 1.25rem 3rem;
 }
 
+/* History needs full half-screens for tree + preview */
+.page.page-wide {
+  max-width: min(1480px, 98vw);
+}
+
 .top {
   display: flex;
   flex-wrap: wrap;
@@ -171,6 +176,12 @@ label.full {
   grid-column: 1 / -1;
 }
 
+.mode-field[hidden],
+label[hidden],
+#offload-mode-label[hidden] {
+  display: none !important;
+}
+
 input, select {
   font-family: var(--mono);
   font-size: 0.85rem;
@@ -282,6 +293,45 @@ input:focus, select:focus {
 
 .muted { color: var(--muted); font-size: 0.85rem; }
 
+.instance-progress {
+  margin: 0 0 0.9rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--bg1);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+.instance-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.85rem;
+}
+
+.instance-progress-bar {
+  height: 6px;
+  background: var(--bg0);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.instance-progress-bar > div {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width 0.35s ease;
+}
+
+.instance-progress-list {
+  margin-top: 0.55rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  max-height: 4.5em;
+  overflow: auto;
+  word-break: break-all;
+}
+
 .log-tabs {
   display: flex;
   gap: 0.35rem;
@@ -307,7 +357,8 @@ input:focus, select:focus {
 
 .log {
   margin: 0;
-  max-height: 320px;
+  max-height: min(55vh, 520px);
+  min-height: 220px;
   overflow: auto;
   padding: 0.85rem 1rem;
   background: #0a0e12;
@@ -388,25 +439,218 @@ input:focus, select:focus {
   font-weight: 500;
 }
 
-.file-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 280px;
+.history-split {
+  display: grid;
+  /* left 1/3 file tree · right 2/3 preview */
+  grid-template-columns: 1fr 2fr;
+  gap: 0.9rem;
+  margin-top: 0.75rem;
+  min-height: min(72vh, 780px);
+  height: min(72vh, 780px);
+  align-items: stretch;
+}
+
+.history-files {
+  border: 1px solid var(--line);
+  background: var(--bg1);
+  border-radius: 4px;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.history-files h3 {
+  margin-top: 0;
+  flex-shrink: 0;
+}
+
+.file-tree {
+  flex: 1;
   overflow: auto;
-}
-
-.file-list a {
-  display: block;
+  min-height: 0;
   font-family: var(--mono);
-  font-size: 0.78rem;
-  color: #7eb0e0;
-  text-decoration: none;
-  padding: 0.25rem 0;
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
-.file-list a:hover {
-  text-decoration: underline;
+.tree-dir,
+.tree-file {
+  user-select: none;
+}
+
+.tree-dir > .tree-row,
+.tree-file > .tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 0.22rem 0.3rem;
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.tree-dir > .tree-row:hover,
+.tree-file > .tree-row:hover {
+  background: var(--bg2);
+}
+
+.tree-file > .tree-row.active {
+  background: rgba(61, 154, 122, 0.16);
+  color: #b6e8d4;
+}
+
+.tree-twist {
+  display: inline-block;
+  width: 1rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.tree-icon {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-children {
+  margin-left: 0.85rem;
+  border-left: 1px solid var(--line);
+  padding-left: 0.35rem;
+}
+
+.tree-dir.collapsed > .tree-children {
+  display: none;
+}
+
+.tree-file .tree-name {
+  color: #7eb0e0;
+}
+
+.history-preview {
+  border: 1px solid var(--line);
+  background: var(--bg1);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.preview-head {
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.78rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.traj-view-toggle {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.traj-btn {
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+}
+
+.traj-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.preview-body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding: 0.85rem;
+}
+
+.preview-raw {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.chat-bubble {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  background: var(--bg0);
+}
+
+.chat-bubble.role-system { border-left: 3px solid #8b9aab; }
+.chat-bubble.role-user { border-left: 3px solid #5b8fc7; }
+.chat-bubble.role-assistant { border-left: 3px solid var(--accent); }
+.chat-bubble.role-tool { border-left: 3px solid #c9a227; }
+.chat-bubble.role-exit { border-left: 3px solid var(--danger); }
+
+.chat-role {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.35rem;
+}
+
+.chat-section-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin: 0.45rem 0 0.2rem;
+}
+
+.chat-text {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.offload-token {
+  color: #f0c674;
+  background: rgba(240, 198, 116, 0.12);
+  border-radius: 2px;
+  padding: 0 0.15em;
+  font-weight: 500;
+}
+
+@media (max-width: 900px) {
+  .history-split {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+  }
+  .history-files,
+  .history-preview {
+    max-height: 50vh;
+  }
 }
 
 @media (max-width: 640px) {

@@ -32,6 +32,15 @@ DATASET_NAME="${DATASET_NAME:-princeton-nlp/SWE-bench_Verified}"
 RUN_ID="${RUN_ID:-swebench_offload_pred}"
 INSTANCE_FILTER="${INSTANCE_FILTER:-}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
+# Harness needs the `docker` + `swebench` Python packages (not the same as Docker CLI).
+# Prefer a dedicated HARNESS_PYTHON; fall back to common conda env then PYTHON_BIN.
+if [[ -z "${HARNESS_PYTHON:-}" ]]; then
+  if [[ -x /workspace/.conda/envs/gui-360/bin/python ]]; then
+    HARNESS_PYTHON=/workspace/.conda/envs/gui-360/bin/python
+  else
+    HARNESS_PYTHON="${PYTHON_BIN}"
+  fi
+fi
 
 usage() {
   cat <<EOF
@@ -54,7 +63,9 @@ Env overrides:
   HARNESS_WORKERS      harness --max_workers (default: 8)
   DATASET_NAME         harness dataset (default: princeton-nlp/SWE-bench_Verified)
   RUN_ID               harness run id
-  PYTHON_BIN           python executable
+  PYTHON_BIN           python for helper bits
+  HARNESS_PYTHON       python with swebench+docker packages
+                       (default: gui-360 env if present, else PYTHON_BIN)
 EOF
 }
 
@@ -127,8 +138,15 @@ mini-extra swebench \
 PREDS="${OUT_DIR}/preds.json"
 [[ -f "${PREDS}" ]] || { echo "[eval ERROR] missing ${PREDS}" >&2; exit 1; }
 
-echo "[eval] harness → ${EVAL_DIR}"
-"${PYTHON_BIN}" "${SCRIPT_DIR}/run_harness.py" \
+echo "[eval] harness → ${EVAL_DIR}  (python=${HARNESS_PYTHON})"
+if ! "${HARNESS_PYTHON}" -c "import docker, swebench" >/dev/null 2>&1; then
+  echo "[eval ERROR] HARNESS_PYTHON missing packages: need 'docker' and 'swebench'" >&2
+  echo "  tried: ${HARNESS_PYTHON}" >&2
+  echo "  Note: Docker CLI can exist while the Python 'docker' SDK is missing." >&2
+  echo "  Fix:  pip install docker swebench   OR set HARNESS_PYTHON to gui-360 python" >&2
+  exit 1
+fi
+"${HARNESS_PYTHON}" "${SCRIPT_DIR}/run_harness.py" \
   --dataset_name "${DATASET_NAME}" \
   --predictions_path "${PREDS}" \
   --max_workers "${HARNESS_WORKERS}" \

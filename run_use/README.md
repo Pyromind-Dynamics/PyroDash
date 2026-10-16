@@ -1,54 +1,61 @@
 # run_use — Coding 评测一键入口
 
-固定模式 **swe_20filter**（SWE-bench Verified representative 20 题）：起 offload adapter → mini-extra + harness → 结果进 `output/<RUN_ID>/`。
+统一入口 **`run_sh/run_coding.sh`**，支持：
+
+| MODE | 含义 |
+|------|------|
+| `swe` | SWE-bench Verified 全量 |
+| `swe_20filter` | representative 20 题（特例） |
+| `deepswe` | DeepSWE 1.1（Pier） |
+| `terminal` | Terminal-Bench（Harbor） |
+
+流程：起 offload adapter → 跑对应 `evaluation_code/*/eval.sh` → 结果进 `output/<RUN_ID>/<MODE>/`。
+
+ROUTER：`tag` / `entropy`（需 LLM）或 **`slm_only`**（仅小模型，不注入 offload 提示词）。
+
+历史结果页：左右分栏预览文件；`.traj.json` 渲染为对话（保留 `<|llm_offload|>` 标记）。
+
+## CLI
+
+```bash
+cd /path/to/PyroDash
+
+# 20filter（或 bash run_use/run_sh/run_swe_20filter.sh）
+MODE=swe_20filter MODEL_PATH=/path/to/ckpt \
+LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+  bash run_use/run_sh/run_coding.sh
+
+# 全量 SWE
+MODE=swe MODEL_PATH=... LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+  bash run_use/run_sh/run_coding.sh
+
+# DeepSWE
+MODE=deepswe DEEPSWE_TASKS=/workspace/work/mjy/eval/deep-swe/tasks \
+MODEL_PATH=... LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+  bash run_use/run_sh/run_coding.sh
+
+# Terminal-Bench
+MODE=terminal N_TASKS=1 MODEL_PATH=... LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+  bash run_use/run_sh/run_coding.sh
+```
+
+脚本会自动 `source /workspace/work/mjy/.venv`（可用 `VENV_DIR` 覆盖）。
+
+## 网页版
+
+```bash
+cd run_use/html
+python server.py   # http://0.0.0.0:8787/
+```
+
+页面 MODE 下拉可选四种；`deepswe` / `terminal` 会显示各自参数（tasks 路径、dataset、N_TASKS 等）。进度默认 **live** 日志（含 vLLM）。
 
 ## 布局
 
 ```
 run_use/
-  run_sh/run_swe_20filter.sh   # CLI
-  html/                        # 网页版（FastAPI）
-  output/<RUN_ID>/             # 每次 run 的产物
-    status.json
-    logs/
-    swe_20filter/{runs,verified}/
+  run_sh/run_coding.sh
+  run_sh/run_swe_20filter.sh   # → MODE=swe_20filter
+  html/
+  output/<RUN_ID>/{logs,status.json,<MODE>/}
 ```
-
-## CLI
-
-编辑 `run_sh/run_swe_20filter.sh` 顶部配置块（或 export 同名环境变量），然后：
-
-```bash
-cd /path/to/PyroDash
-# 本地 SLM 权重
-MODEL_PATH=/path/to/hf_ckpt \
-LLM_BASE_URL=https://.../v1 LLM_API_KEY=... LLM_MODEL=... \
-ROUTER_MODE=tag \
-  bash run_use/run_sh/run_swe_20filter.sh
-
-# 或远程 SLM
-SLM_BASE_URL=http://host:8000/v1 SLM_MODEL=my-slm \
-LLM_BASE_URL=https://.../v1 LLM_API_KEY=... LLM_MODEL=... \
-  bash run_use/run_sh/run_swe_20filter.sh
-```
-
-进度写在 `output/<RUN_ID>/status.json`（`starting_adapter` → `evaluating` → `done` / `failed`）。
-
-## 网页版
-
-依赖：`fastapi`、`uvicorn`（若未安装：`pip install fastapi uvicorn`）。
-
-```bash
-cd run_use/html
-python server.py
-# 默认 http://0.0.0.0:8787/
-# RUN_USE_HOST / RUN_USE_PORT 可改绑定
-```
-
-浏览器打开后：填 SLM/LLM/端口 →「开始评测」→ 轮询进度与日志 →「历史结果」看摘要与文件。
-
-## 说明
-
-- `evaluation/evaluation_code/swe-bench/eval.sh` 支持 `EVAL_OUTPUT_DIR`、`INSTANCE_FILTER`；本脚本会注入 20filter 正则。
-- Adapter 来自 `offload/offload_code/{tag|entropy}/api.sh`。
-- 评测脚本本身仍只在 `evaluation/`；产物一律进 `run_use/output/`。

@@ -1,0 +1,34 @@
+diff --git a/doc/whats-new.rst b/doc/whats-new.rst
+index 5a9f2497..e69fbade 100644
+--- a/doc/whats-new.rst
++++ b/doc/whats-new.rst
+@@ -70,6 +70,8 @@ Bug fixes
+   By `Justus Magin <https://github.com/keewis>`_.
+ - :py:meth:`Dataset.rename`, :py:meth:`DataArray.rename` now check for conflicts with
+   MultiIndex level names.
++- :py:meth:`Dataset.merge` no longer fails when passed a `DataArray` instead of a `Dataset` object.
++  By `Tom Nicholas <https://github.com/TomNicholas>`_.
+ 
+ Documentation
+ ~~~~~~~~~~~~~
+diff --git a/xarray/core/dataset.py b/xarray/core/dataset.py
+index ac0a923d..99c04453 100644
+--- a/xarray/core/dataset.py
++++ b/xarray/core/dataset.py
+@@ -3547,7 +3547,7 @@ class Dataset(Mapping, ImplementsDatasetReduce, DataWithCoords):
+ 
+     def merge(
+         self,
+-        other: "CoercibleMapping",
++        other: Union["CoercibleMapping", "DataArray"],
+         inplace: bool = None,
+         overwrite_vars: Union[Hashable, Iterable[Hashable]] = frozenset(),
+         compat: str = "no_conflicts",
+@@ -3604,6 +3604,7 @@ class Dataset(Mapping, ImplementsDatasetReduce, DataWithCoords):
+             If any variables conflict (see ``compat``).
+         """
+         _check_inplace(inplace)
++        other = other.to_dataset() if isinstance(other, xr.DataArray) else other
+         merge_result = dataset_merge_method(
+             self,
+             other,

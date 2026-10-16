@@ -9,7 +9,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT_DIR="${SCRIPT_DIR}/output"
+# If EVAL_OUTPUT_DIR is set, redirect Harbor job output there (for run_use pipelines).
+OUT_DIR="${EVAL_OUTPUT_DIR:-${SCRIPT_DIR}/output}"
 mkdir -p "${OUT_DIR}"
 
 detect_host_ip() {
@@ -50,6 +51,7 @@ Options:
   -h, --help           Show this help
 
 Env:
+  EVAL_OUTPUT_DIR      if set, write Harbor jobs under this directory
   DATASET              Default terminal-bench/terminal-bench-2-1
                        (e.g. terminal-bench@2.0)
   MODEL_NAME           Default openai/pyrodash_code

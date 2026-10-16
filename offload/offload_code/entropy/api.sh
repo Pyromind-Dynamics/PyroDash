@@ -91,7 +91,8 @@ fi
 
 RUN_STAMP="$(date '+%Y%m%d_%H%M%S')"
 SAFE_NAME="$(echo "${SERVED_NAME}" | tr '/: ' '___')"
-LOG_DIR="${OFFLOAD_ROOT}/logs/${SAFE_NAME}_${RUN_STAMP}"
+# OFFLOAD_LOG_DIR: when set (e.g. by run_use), put vLLM/adapter logs there for the web UI.
+LOG_DIR="${OFFLOAD_LOG_DIR:-${OFFLOAD_ROOT}/logs/${SAFE_NAME}_${RUN_STAMP}}"
 mkdir -p "${LOG_DIR}/adapter_stats"
 
 ADAPTER_PID=""

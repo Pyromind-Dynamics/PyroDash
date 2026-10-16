@@ -53,6 +53,8 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-}"
 
 # offload mode: handoff | rewrite | keep
 OFFLOAD_MODE="${OFFLOAD_MODE:-handoff}"
+# USE_LLM=false → SLM-only (no offload system prompt, no LLM call)
+USE_LLM="${USE_LLM:-true}"
 # =========================
 
 source "${OFFLOAD_ROOT}/serve/common.sh"
@@ -79,8 +81,21 @@ else
   exit 1
 fi
 
-[[ -n "${LLM_API_KEY}" && "${LLM_API_KEY}" != "your-llm-api-key" ]] || \
-  echo "WARNING: set LLM_API_KEY before production use" >&2
+case "${USE_LLM}" in
+  true|True|TRUE|1|yes|YES) USE_LLM=true ;;
+  false|False|FALSE|0|no|NO) USE_LLM=false ;;
+  *) echo "ERROR: USE_LLM must be true or false (got ${USE_LLM})" >&2; exit 1 ;;
+esac
+if [[ "${USE_LLM}" == "true" ]]; then
+  [[ -n "${LLM_API_KEY}" && "${LLM_API_KEY}" != "your-llm-api-key" ]] || \
+    echo "WARNING: set LLM_API_KEY before production use" >&2
+else
+  # Dummy placeholders so argparse still receives values when SLM-only
+  LLM_BASE_URL="${LLM_BASE_URL:-http://127.0.0.1:0/v1}"
+  LLM_API_KEY="${LLM_API_KEY:-unused}"
+  LLM_MODEL="${LLM_MODEL:-unused}"
+  echo "[api] USE_LLM=false → SLM-only (no offload system prompt)"
+fi
 case "${OFFLOAD_MODE}" in
   handoff|rewrite|keep) ;;
   *) echo "ERROR: OFFLOAD_MODE must be handoff, rewrite, or keep (got ${OFFLOAD_MODE})" >&2; exit 1 ;;
@@ -88,7 +103,8 @@ esac
 
 RUN_STAMP="$(date '+%Y%m%d_%H%M%S')"
 SAFE_NAME="$(echo "${SERVED_NAME}" | tr '/: ' '___')"
-LOG_DIR="${OFFLOAD_ROOT}/logs/${SAFE_NAME}_${OFFLOAD_MODE}_${RUN_STAMP}"
+# OFFLOAD_LOG_DIR: when set (e.g. by run_use), put vLLM/adapter logs there for the web UI.
+LOG_DIR="${OFFLOAD_LOG_DIR:-${OFFLOAD_ROOT}/logs/${SAFE_NAME}_${OFFLOAD_MODE}_${RUN_STAMP}}"
 mkdir -p "${LOG_DIR}/adapter_stats"
 
 ADAPTER_PID=""
@@ -143,7 +159,7 @@ start_adapter() {
     export TOKEN_USAGE_DIR
   fi
   echo "[adapter] SLM=${SLM_MODEL} @ ${SLM_BASE_URL}"
-  echo "[adapter] LLM=${LLM_MODEL} @ ${LLM_BASE_URL}"
+  echo "[adapter] LLM=${LLM_MODEL} @ ${LLM_BASE_URL}  use_llm=${USE_LLM}"
   echo "[adapter] offload mode=${OFFLOAD_MODE}"
   echo "[adapter] listen ${ADAPTER_HOST}:${ADAPTER_PORT}  log=${ADAPTER_LOG}"
   echo "[adapter] stats -> ${LOG_DIR}/adapter_stats"
@@ -157,7 +173,7 @@ start_adapter() {
     --llm-base-url "${LLM_BASE_URL}" \
     --llm-api-key "${LLM_API_KEY}" \
     --llm-model "${LLM_MODEL}" \
-    --use-llm true \
+    --use-llm "${USE_LLM}" \
     --max-new-tokens "${MAX_NEW_TOKENS}" \
     ${MAX_MODEL_LEN:+--max-context-len "${MAX_MODEL_LEN}"} \
     --slm-temperature "${SLM_TEMPERATURE}" \

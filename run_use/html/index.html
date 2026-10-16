@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=2" />
 </head>
 <body>
   <div class="page">
@@ -24,32 +24,64 @@
 
     <main>
       <section id="panel-run" class="panel active">
-        <h1>swe_20filter</h1>
-        <p class="lede">起 offload adapter，跑 SWE-bench representative 20 题，结果写入 <code>run_use/output</code>。</p>
+        <h1>Coding Eval</h1>
+        <p class="lede">起 offload adapter，跑 SWE / DeepSWE / Terminal-Bench；结果写入 <code>run_use/output</code>。<code>swe_20filter</code> 为 20 题特例。</p>
 
         <form id="run-form" class="form">
           <fieldset>
             <legend>模式</legend>
             <label>
               MODE
-              <select name="mode" disabled>
-                <option value="swe_20filter" selected>swe_20filter</option>
+              <select name="mode" id="mode-select">
+                <option value="swe">swe（Verified 全量）</option>
+                <option value="swe_20filter" selected>swe_20filter（20 题特例）</option>
+                <option value="deepswe">deepswe</option>
+                <option value="terminal">terminal</option>
               </select>
             </label>
             <label>
               ROUTER
-              <select name="router_mode">
-                <option value="tag" selected>tag</option>
-                <option value="entropy">entropy</option>
+              <select name="router_mode" id="router-select">
+                <option value="tag" selected>tag（offload）</option>
+                <option value="entropy">entropy（offload）</option>
+                <option value="slm_only">slm_only（仅小模型）</option>
               </select>
             </label>
-            <label>
+            <label id="offload-mode-label">
               OFFLOAD_MODE
-              <select name="offload_mode">
+              <select name="offload_mode" id="offload-mode-select">
                 <option value="handoff" selected>handoff</option>
                 <option value="rewrite">rewrite</option>
                 <option value="keep">keep</option>
               </select>
+            </label>
+          </fieldset>
+
+          <fieldset id="mode-extra" class="mode-extra">
+            <legend>评测参数</legend>
+            <label class="mode-field mode-swe">
+              WORKERS（SWE）
+              <input name="workers" type="number" value="4" />
+            </label>
+            <label class="mode-field mode-swe">
+              HARNESS_WORKERS
+              <input name="harness_workers" type="number" value="8" />
+            </label>
+            <label class="mode-field mode-agent">
+              N_CONCURRENT
+              <input name="n_concurrent" type="number" value="4" />
+            </label>
+            <label class="mode-field mode-agent">
+              N_TASKS（空=全部）
+              <input name="n_tasks" type="text" placeholder="e.g. 1 for smoke" />
+            </label>
+            <label class="mode-field mode-deepswe full">
+              DEEPSWE_TASKS
+              <input name="deepswe_tasks" type="text" value="/workspace/work/mjy/eval/deep-swe/tasks" />
+            </label>
+            <label class="mode-field mode-terminal full">
+              TB_DATASET
+              <input name="tb_dataset" type="text" value="terminal-bench/terminal-bench-2-1" />
             </label>
           </fieldset>
 
@@ -74,24 +106,24 @@
             </label>
           </fieldset>
 
-          <fieldset>
-            <legend>LLM</legend>
+          <fieldset id="llm-fieldset">
+            <legend>LLM（slm_only 可不填）</legend>
             <label class="full">
               LLM_BASE_URL
-              <input name="llm_base_url" type="text" required placeholder="https://api.example.com/v1" />
+              <input name="llm_base_url" id="llm-base-url" type="text" placeholder="https://api.example.com/v1" />
             </label>
             <label>
               LLM_MODEL
-              <input name="llm_model" type="text" required />
+              <input name="llm_model" id="llm-model" type="text" />
             </label>
             <label>
               LLM_API_KEY
-              <input name="llm_api_key" type="password" required />
+              <input name="llm_api_key" id="llm-api-key" type="password" />
             </label>
           </fieldset>
 
           <fieldset>
-            <legend>端口与并行</legend>
+            <legend>端口</legend>
             <label>
               ADAPTER_PORT
               <input name="adapter_port" type="number" value="18027" />
@@ -101,20 +133,12 @@
               <input name="vllm_port" type="number" value="8007" />
             </label>
             <label>
-              WORKERS
-              <input name="workers" type="number" value="4" />
-            </label>
-            <label>
-              HARNESS_WORKERS
-              <input name="harness_workers" type="number" value="8" />
-            </label>
-            <label>
               CUDA_VISIBLE_DEVICES
               <input name="cuda_visible_devices" type="text" value="0" />
             </label>
             <label>
               RUN_ID（可空，自动生成）
-              <input name="run_id" type="text" placeholder="swe20_YYYYMMDD_HHMMSS" />
+              <input name="run_id" type="text" placeholder="mode_YYYYMMDD_HHMMSS" />
             </label>
           </fieldset>
 
@@ -134,10 +158,21 @@
             <span id="progress-phase" class="phase-badge">—</span>
             <span id="progress-message" class="muted"></span>
           </div>
+          <div id="instance-progress" class="instance-progress" hidden>
+            <div class="instance-progress-meta">
+              <span id="instance-progress-label" class="mono">—</span>
+              <span id="instance-progress-pct" class="muted"></span>
+            </div>
+            <div class="instance-progress-bar"><div id="instance-progress-fill"></div></div>
+            <div id="instance-progress-list" class="instance-progress-list mono muted"></div>
+          </div>
           <div class="log-tabs">
-            <button type="button" class="log-tab active" data-log="eval">eval.log</button>
-            <button type="button" class="log-tab" data-log="adapter_api">adapter_api.log</button>
-            <button type="button" class="log-tab" data-log="web_launch">web_launch.log</button>
+            <button type="button" class="log-tab active" data-log="live">live</button>
+            <button type="button" class="log-tab" data-log="minisweagent">minisweagent</button>
+            <button type="button" class="log-tab" data-log="eval">eval</button>
+            <button type="button" class="log-tab" data-log="adapter_api">adapter_api</button>
+            <button type="button" class="log-tab" data-log="vllm_serve">vllm_serve</button>
+            <button type="button" class="log-tab" data-log="adapter">adapter</button>
           </div>
           <pre id="progress-log" class="log"></pre>
           <div id="progress-done" class="done-box" hidden>
@@ -156,12 +191,28 @@
         <div id="result-detail" class="result-detail" hidden>
           <h2 id="result-title"></h2>
           <div id="result-summary" class="summary"></div>
-          <h3>文件</h3>
-          <ul id="result-files" class="file-list"></ul>
+          <div class="history-split">
+            <aside class="history-files">
+              <h3>文件树</h3>
+              <div id="file-tree" class="file-tree"></div>
+            </aside>
+            <div class="history-preview">
+              <div class="preview-head">
+                <span id="preview-path" class="mono muted">点击左侧文件预览</span>
+                <div id="traj-view-toggle" class="traj-view-toggle" hidden>
+                  <button type="button" class="btn traj-btn active" data-view="chat">对话</button>
+                  <button type="button" class="btn traj-btn" data-view="json">JSON</button>
+                </div>
+              </div>
+              <div id="preview-body" class="preview-body">
+                <p class="muted">左侧按文件夹选文件；轨迹可在「对话 / JSON」间切换。</p>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </main>
   </div>
-  <script src="/app.js"></script>
+  <script src="/app.js?v=2"></script>
 </body>
 </html>
