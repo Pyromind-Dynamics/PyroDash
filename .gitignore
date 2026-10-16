@@ -218,11 +218,6 @@ __marimo__/
 .streamlit/secrets.toml
 .DS_Store
 
-# Evaluation outputs
-evaluation/evaluation_code/swe-bench/output/
-evaluation/evaluation_code/deepswe1.1/output/
-evaluation/evaluation_code/terminal-sh/output/
-run_use/output/
-
-# Offload adapter run logs / token stats
-offload/offload_code/**/logs/
+# Runtime logs / eval outputs (do not commit)
+logs/
+output/
