@@ -12,16 +12,11 @@
 set -euo pipefail
 
 OFFLOAD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYRODASH_ROOT="$(cd "${OFFLOAD_ROOT}/../../.." && pwd)"
-# Prefer project .venv for adapter / vLLM (same as run_use).
-# shellcheck disable=SC1091
-if [[ -f "${PYRODASH_ROOT}/env_paths.sh" ]]; then
-  source "${PYRODASH_ROOT}/env_paths.sh"
-  pyrodash_activate_venv "${VENV_DIR:-${PYRODASH_VENV_DIR}}"
-else
-  PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
+# Env/binaries come from run_use (web UI / run_coding.sh). Do not activate here.
+if [[ -z "${PYTHON_BIN:-}" || ! -x "${PYTHON_BIN}" ]]; then
+  echo "[api ERROR] PYTHON_BIN unset/invalid. Launch via run_use (web or run_coding.sh), or export PYTHON_BIN=/path/to/python" >&2
+  exit 1
 fi
-PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
 
 # =========================
 # Edit this block (or export env vars before running)

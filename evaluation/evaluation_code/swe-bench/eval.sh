@@ -10,9 +10,6 @@ export MSWEA_MODEL_RETRY_STOP_AFTER_ATTEMPT="${MSWEA_MODEL_RETRY_STOP_AFTER_ATTE
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="${SCRIPT_DIR}/config"
-PYRODASH_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-# shellcheck disable=SC1091
-source "${PYRODASH_ROOT}/env_paths.sh"
 CLUSTER="${CLUSTER:-us}"
 case "${CLUSTER}" in
   us|shanghai) ;;
@@ -39,16 +36,23 @@ HARNESS_WORKERS="${HARNESS_WORKERS:-8}"
 DATASET_NAME="${DATASET_NAME:-princeton-nlp/SWE-bench_Verified}"
 RUN_ID="${RUN_ID:-swebench_offload_pred}"
 INSTANCE_FILTER="${INSTANCE_FILTER:-}"
+# PYTHON_BIN / HARNESS_PYTHON are provided by run_use (web UI / run_coding.sh).
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
-# Harness: base conda (swebench 5.x). Project .venv is for vLLM only.
-# Shanghai prefers eval_code only when HARNESS_PYTHON was not set and that env can import the harness packages.
-if [[ "${CLUSTER}" == "shanghai" && -z "${HARNESS_PYTHON:-}" && -x /workspace/.conda/envs/eval_code/bin/python ]]; then
-  if /workspace/.conda/envs/eval_code/bin/python -c "import docker, swebench" >/dev/null 2>&1; then
-    HARNESS_PYTHON=/workspace/.conda/envs/eval_code/bin/python
-    export HARNESS_PYTHON
-  fi
+if [[ -z "${HARNESS_PYTHON:-}" ]]; then
+  echo "[eval ERROR] HARNESS_PYTHON unset. Launch via run_use, or export HARNESS_PYTHON=/path/to/python" >&2
+  exit 1
 fi
-pyrodash_resolve_harness_python || true
+# Accept env root from caller; normalize to bin/python.
+if [[ -d "${HARNESS_PYTHON}" && -x "${HARNESS_PYTHON}/bin/python" ]]; then
+  HARNESS_PYTHON="${HARNESS_PYTHON}/bin/python"
+elif [[ -d "${HARNESS_PYTHON}" && -x "${HARNESS_PYTHON}/bin/python3" ]]; then
+  HARNESS_PYTHON="${HARNESS_PYTHON}/bin/python3"
+fi
+if [[ ! -x "${HARNESS_PYTHON}" ]]; then
+  echo "[eval ERROR] HARNESS_PYTHON not executable: ${HARNESS_PYTHON}" >&2
+  exit 1
+fi
+export HARNESS_PYTHON
 echo "[eval] HARNESS_PYTHON=${HARNESS_PYTHON}"
 
 usage() {
@@ -73,8 +77,7 @@ Env overrides:
   DATASET_NAME         harness dataset (default: princeton-nlp/SWE-bench_Verified)
   RUN_ID               harness run id
   PYTHON_BIN           python for helper bits
-  HARNESS_PYTHON       python with swebench+docker (default: base conda via env_paths.sh;
-                       CLUSTER=shanghai prefers eval_code when unset and importable)
+  HARNESS_PYTHON       python with swebench+docker (required; set by run_use / web UI)
   CLUSTER              us (default) | shanghai
 EOF
 }
@@ -191,7 +194,7 @@ if ! "${HARNESS_PYTHON}" -c "import docker, swebench" >/dev/null 2>&1; then
   echo "[eval ERROR] HARNESS_PYTHON missing packages: need 'docker' and 'swebench'" >&2
   echo "  tried: ${HARNESS_PYTHON}" >&2
   echo "  Note: Docker CLI can exist while the Python 'docker' SDK is missing." >&2
-  echo "  Fix:  pip install docker swebench   OR set HARNESS_PYTHON=/workspace/.conda/bin/python" >&2
+  echo "  Fix:  pip install docker swebench   OR set HARNESS_PYTHON to an env that has them" >&2
   exit 1
 fi
 # Some swebench builds ignore --report_dir and write <model>.<run_id>.json to CWD.

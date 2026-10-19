@@ -77,15 +77,14 @@ Tag-only: `OFFLOAD_MODE=handoff|rewrite|keep`
 
 Entropy-only: `ENTROPY_TOP_K`, `ENTROPY_THRESHOLD`, `LLM_REASONING_EFFORT` (vLLM also sets `--max-logprobs`)
 
-Optional: `PYTHON_BIN`, `VLLM_BIN`, `SGLANG_BIN` / `SGLANG_PYTHON`, `TOKEN_USAGE_DIR` (extra token_usage mirror).
+Required from caller (`run_use`): `PYTHON_BIN` (and `VLLM_BIN` / `SGLANG_*` when starting a local SLM). Optional: `TOKEN_USAGE_DIR`.
 
-Default Python/engine paths come from repo-root [`env_paths.sh`](../../env_paths.sh): project `.venv` for vLLM/adapter (not gui-360).
+Do **not** set env paths inside `offload/` — use the web UI / [`run_use/run_sh/run_coding.sh`](../../run_use/run_sh/run_coding.sh).
 
 ## Dependencies
 
 ```bash
-# prefer project venv
-source /workspace/work/mjy/.venv/bin/activate
+# In your SLM/vLLM env:
 pip install -r requirements.txt
-# plus a working `vllm` on PATH (or set VLLM_BIN); for SGLang: pip install sglang
+# plus a working `vllm` (or set VLLM_BIN); for SGLang: pip install sglang
 ```

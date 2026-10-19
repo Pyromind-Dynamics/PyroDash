@@ -78,17 +78,171 @@ class StartRunRequest(BaseModel):
     step_limit: int = 150  # SWE agent.step_limit
     n_concurrent: Optional[int] = None
     n_tasks: str = ""  # empty = all; number as string for optional
-    deepswe_tasks: str = "/workspace/work/mjy/eval/deep-swe/tasks"
+    deepswe_tasks: str = ""  # required when mode=deepswe; set in web UI
     tb_dataset: str = "terminal-bench/terminal-bench-2-1"
     cuda_visible_devices: str = "0"
     run_id: str = ""
     resume: bool = False
+    # Required from web UI (or process env when launching server with exports).
+    venv_dir: str = ""  # SLM/vLLM env prefix (.venv or conda env root)
+    harness_python: str = ""  # SWE harness: env root or .../bin/python
 
 
 def _require_run_id(run_id: str) -> str:
     if not SAFE_RUN_ID.match(run_id):
         raise HTTPException(status_code=400, detail="invalid run_id")
     return run_id
+
+
+def _resolve_env_prefix(raw: str) -> Optional[Path]:
+    """Accept env root or .../bin/python → return env prefix Path, or None if empty/invalid."""
+    text = (raw or "").strip()
+    if not text:
+        return None
+    p = Path(text).expanduser()
+    if p.is_file() and p.name.startswith("python"):
+        # .../bin/python → env root
+        if p.parent.name == "bin":
+            return p.parent.parent
+        return p.parent
+    if p.is_dir():
+        if (p / "bin" / "python").is_file() or (p / "bin" / "python3").is_file():
+            return p
+        if p.name == "bin" and (
+            (p / "python").is_file() or (p / "python3").is_file()
+        ):
+            return p.parent
+    return p if text else None
+
+
+def _python_in_prefix(prefix: Path) -> Path:
+    for name in ("python", "python3"):
+        cand = prefix / "bin" / name
+        if cand.is_file():
+            return cand
+    return prefix / "bin" / "python"
+
+
+def _resolve_run_python_envs(body: StartRunRequest) -> tuple[Path, Path]:
+    """Return (venv_dir, harness_python) from UI fields, else process env. No machine defaults."""
+    venv_raw = (body.venv_dir or "").strip() or os.environ.get("VENV_DIR", "").strip()
+    harness_raw = (body.harness_python or "").strip() or os.environ.get(
+        "HARNESS_PYTHON", ""
+    ).strip()
+
+    if not venv_raw:
+        raise HTTPException(
+            status_code=400,
+            detail="venv_dir required (SLM/vLLM 环境路径，在网页「Python 环境」填写)",
+        )
+    if not harness_raw:
+        raise HTTPException(
+            status_code=400,
+            detail="harness_python required (SWE harness 环境路径，在网页「Python 环境」填写)",
+        )
+
+    venv_prefix = _resolve_env_prefix(venv_raw)
+    if venv_prefix is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid venv_dir: {venv_raw}",
+        )
+
+    harness_prefix = _resolve_env_prefix(harness_raw)
+    if harness_prefix is not None:
+        harness_py = _python_in_prefix(harness_prefix)
+    else:
+        harness_py = Path(harness_raw).expanduser()
+
+    return venv_prefix, harness_py
+
+
+def _conda_env_roots_from_env() -> list[Path]:
+    """Derive conda envs directories from CONDA_* only (no hardcoded machine paths)."""
+    roots: list[Path] = []
+    seen: set[str] = set()
+
+    def _add(p: Path) -> None:
+        key = str(p)
+        if key in seen or not p.is_dir():
+            return
+        seen.add(key)
+        roots.append(p)
+
+    envs_path = os.environ.get("CONDA_ENVS_PATH", "").strip()
+    if envs_path:
+        for part in envs_path.split(os.pathsep):
+            part = part.strip()
+            if part:
+                _add(Path(part))
+
+    for key in ("CONDA_PREFIX", "CONDA_ROOT", "CONDA_EXE"):
+        raw = os.environ.get(key, "").strip()
+        if not raw:
+            continue
+        p = Path(raw)
+        if key == "CONDA_EXE":
+            # .../bin/conda → install root → envs
+            install = p.parent.parent if p.parent.name == "bin" else p.parent
+            _add(install / "envs")
+        elif key == "CONDA_PREFIX":
+            # active env: .../envs/name → .../envs ; or base → base/envs
+            if p.parent.name == "envs":
+                _add(p.parent)
+            else:
+                _add(p / "envs")
+        else:  # CONDA_ROOT
+            _add(p / "envs")
+
+    return roots
+
+
+def _discover_conda_envs() -> list[str]:
+    """Best-effort list of conda env prefixes for UI datalist (dynamic, no hardcodes)."""
+    out: list[str] = []
+    seen: set[str] = set()
+
+    # Prefer `conda env list --json` when available
+    try:
+        proc = subprocess.run(
+            ["conda", "env", "list", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            data = json.loads(proc.stdout)
+            for p in data.get("envs") or []:
+                key = str(p)
+                if key in seen:
+                    continue
+                prefix = Path(key)
+                if (prefix / "bin" / "python").is_file() or (
+                    prefix / "bin" / "python3"
+                ).is_file():
+                    seen.add(key)
+                    out.append(key)
+    except (OSError, json.JSONDecodeError, subprocess.TimeoutExpired):
+        pass
+
+    for root in _conda_env_roots_from_env():
+        try:
+            for child in sorted(root.iterdir()):
+                if not child.is_dir():
+                    continue
+                if not (child / "bin" / "python").is_file() and not (
+                    child / "bin" / "python3"
+                ).is_file():
+                    continue
+                key = str(child)
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(key)
+        except OSError:
+            continue
+    return out
 
 
 def _pid_alive(pid: Any) -> bool:
@@ -312,6 +466,19 @@ def list_modes() -> dict[str, Any]:
     }
 
 
+@app.get("/api/envs")
+def list_envs() -> dict[str, Any]:
+    """Suggest conda/.venv prefixes for the Python-env form fields."""
+    envs = _discover_conda_envs()
+    return {
+        "envs": envs,
+        "defaults": {
+            "venv_dir": os.environ.get("VENV_DIR", ""),
+            "harness_python": os.environ.get("HARNESS_PYTHON", ""),
+        },
+    }
+
+
 @app.get("/api/runs")
 def list_runs() -> dict[str, Any]:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -360,11 +527,18 @@ def start_run(body: StartRunRequest) -> JSONResponse:
                 status_code=400,
                 detail="llm_base_url, llm_api_key, llm_model required (unless router_mode=slm_only)",
             )
-    if body.mode == "deepswe" and not Path(body.deepswe_tasks).is_dir():
-        raise HTTPException(
-            status_code=400,
-            detail=f"deepswe_tasks not a directory: {body.deepswe_tasks}",
-        )
+    if body.mode == "deepswe":
+        tasks = (body.deepswe_tasks or "").strip()
+        if not tasks:
+            raise HTTPException(
+                status_code=400,
+                detail="deepswe_tasks required when mode=deepswe (set in web UI)",
+            )
+        if not Path(tasks).is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail=f"deepswe_tasks not a directory: {tasks}",
+            )
     if not RUN_SH.is_file():
         raise HTTPException(status_code=500, detail=f"missing {RUN_SH}")
 
@@ -405,11 +579,28 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         raise HTTPException(status_code=400, detail="slm_backend must be vllm or sglang")
     # Prefer slm_port; fall back to legacy vllm_port when client only sends that.
     slm_port = int(body.slm_port or body.vllm_port or 8007)
-    # Match env_paths.sh: .venv for vLLM/adapter; base conda for SWE harness.
-    venv_dir = Path(os.environ.get("VENV_DIR") or "/workspace/work/mjy/.venv")
-    harness_py = Path(os.environ.get("HARNESS_PYTHON") or "/workspace/.conda/bin/python")
+    # Python envs: UI fields first, then process env (resolved in run_use only).
+    venv_dir, harness_py = _resolve_run_python_envs(body)
+    python_bin = _python_in_prefix(venv_dir)
+    vllm_bin = venv_dir / "bin" / "vllm"
+    if not python_bin.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail=f"SLM/vLLM env missing python: {python_bin} (check VENV_DIR)",
+        )
+    if body.model_path and slm_backend == "vllm" and not vllm_bin.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail=f"vllm binary not found: {vllm_bin} (check SLM/vLLM 环境路径)",
+        )
     if not harness_py.is_file():
-        harness_py = Path("/workspace/.conda/bin/python3")
+        raise HTTPException(
+            status_code=400,
+            detail=f"SWE harness python not found: {harness_py} (check HARNESS_PYTHON)",
+        )
+    path_parts = [str(venv_dir / "bin"), str(harness_py.parent)]
+    if os.environ.get("PATH"):
+        path_parts.append(os.environ["PATH"])
     env = os.environ.copy()
     env.update(
         {
@@ -436,9 +627,11 @@ def start_run(body: StartRunRequest) -> JSONResponse:
             "TB_DATASET": body.tb_dataset,
             "RESUME": "1" if resumed else "0",
             "VENV_DIR": str(venv_dir),
-            "PYTHON_BIN": str(venv_dir / "bin" / "python"),
-            "VLLM_BIN": str(venv_dir / "bin" / "vllm"),
+            "PYTHON_BIN": str(python_bin),
+            "VLLM_BIN": str(vllm_bin),
+            "VLLM_CONDA_PREFIX": str(venv_dir),
             "HARNESS_PYTHON": str(harness_py),
+            "PATH": ":".join(path_parts),
         }
     )
     # Context length / any other engine flags belong inside EXTRA_ARGS (--max-model-len / --context-length).

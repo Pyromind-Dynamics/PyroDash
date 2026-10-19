@@ -25,5 +25,7 @@ Pier / Harbor agents run in containers — prefer a LAN host IP, not `127.0.0.1`
 
 ### Python envs
 
-- **Offload / vLLM**: project `.venv` (`/workspace/work/mjy/.venv`) via [`env_paths.sh`](../../env_paths.sh)
-- **SWE harness**: base conda (`/workspace/.conda/bin/python`) — not gui-360
+Configured only in [`run_use`](../../run_use) (web UI or `run_sh/run_coding.sh`). These scripts receive already-resolved:
+
+- `PYTHON_BIN` / `VLLM_BIN` — SLM / adapter
+- `HARNESS_PYTHON` — swebench + docker (+ `mini-extra` on `PATH`)

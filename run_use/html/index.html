@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=10" />
+  <link rel="stylesheet" href="styles.css?v=12" />
 </head>
 <body>
   <div class="page">
@@ -78,6 +78,38 @@
             </label>
           </fieldset>
 
+          <fieldset id="python-env-fieldset">
+            <legend>Python 环境</legend>
+            <p class="field-help full">
+              两套环境分开选：<strong>SLM / vLLM</strong> 跑小模型与 adapter；
+              <strong>SWE harness</strong> 跑 mini-extra + swebench 打分。可填 conda env 目录或 python 路径。
+            </p>
+            <label class="full">
+              SLM / vLLM 环境（VENV_DIR）
+              <input
+                name="venv_dir"
+                id="venv-dir"
+                type="text"
+                list="conda-env-suggestions"
+                placeholder="/path/to/conda/envs/vllm 或 /path/to/.venv"
+                autocomplete="off"
+              />
+            </label>
+            <label class="full">
+              SWE harness 环境（HARNESS_PYTHON）
+              <input
+                name="harness_python"
+                id="harness-python"
+                type="text"
+                list="conda-env-suggestions"
+                placeholder="/path/to/conda/envs/pyrosdk 或 .../bin/python"
+                autocomplete="off"
+              />
+            </label>
+            <datalist id="conda-env-suggestions"></datalist>
+            <p id="env-detect-hint" class="field-help full muted"></p>
+          </fieldset>
+
           <fieldset>
             <legend>评测模式</legend>
             <label>
@@ -122,7 +154,7 @@
             </label>
             <label class="mode-field mode-deepswe full">
               DEEPSWE_TASKS
-              <input name="deepswe_tasks" type="text" value="/workspace/work/mjy/eval/deep-swe/tasks" />
+              <input name="deepswe_tasks" type="text" placeholder="/path/to/deep-swe/tasks" value="" />
             </label>
             <label class="mode-field mode-terminal full">
               TB_DATASET
@@ -315,6 +347,6 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>

@@ -15,12 +15,11 @@ RUN_USE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PYRODASH_ROOT="$(cd "${RUN_USE_ROOT}/.." && pwd)"
 
 # shellcheck disable=SC1091
-source "${PYRODASH_ROOT}/env_paths.sh"
-# vLLM / adapter / pipeline → project .venv
-pyrodash_activate_venv "${VENV_DIR:-${PYRODASH_VENV_DIR}}"
+source "${RUN_USE_ROOT}/env_paths.sh"
 
 # =========================
 # Edit this block (or export env vars before running)
+# Python envs: set VENV_DIR + HARNESS_PYTHON (web UI does this). No machine defaults.
 # =========================
 
 MODE="${MODE:-swe_20filter}"
@@ -58,19 +57,41 @@ STEP_LIMIT="${STEP_LIMIT:-150}"
 # DeepSWE / Terminal concurrency
 N_CONCURRENT="${N_CONCURRENT:-${WORKERS}}"
 N_TASKS="${N_TASKS:-}"
-DEEPSWE_TASKS="${DEEPSWE_TASKS:-/workspace/work/mjy/eval/deep-swe/tasks}"
+DEEPSWE_TASKS="${DEEPSWE_TASKS:-}"
 TB_DATASET="${TB_DATASET:-terminal-bench/terminal-bench-2-1}"
 
 RUN_ID="${RUN_ID:-${MODE}_$(date '+%Y%m%d_%H%M%S')}"
-# SWE harness verify → base conda (swebench + docker). Never gui-360 / .venv.
-# Shanghai prefers eval_code only when HARNESS_PYTHON was not set and that env can import the harness packages.
-if [[ "${CLUSTER}" == "shanghai" && -z "${HARNESS_PYTHON:-}" && -x /workspace/.conda/envs/eval_code/bin/python ]]; then
-  if /workspace/.conda/envs/eval_code/bin/python -c "import docker, swebench" >/dev/null 2>&1; then
-    export HARNESS_PYTHON=/workspace/.conda/envs/eval_code/bin/python
-  fi
+
+if [[ -z "${VENV_DIR:-}" ]]; then
+  echo "[run ERROR] VENV_DIR unset. Set SLM/vLLM env in the web UI or export VENV_DIR=..." >&2
+  exit 1
 fi
-pyrodash_resolve_harness_python || true
-echo "[run] PYTHON_BIN=${PYTHON_BIN} VLLM_BIN=${VLLM_BIN:-} HARNESS_PYTHON=${HARNESS_PYTHON}"
+pyrodash_activate_venv "${VENV_DIR}" || exit 1
+
+case "${MODE}" in
+  swe|swe_20filter)
+    if [[ -z "${HARNESS_PYTHON:-}" ]]; then
+      echo "[run ERROR] HARNESS_PYTHON unset. Set SWE harness env in the web UI or export HARNESS_PYTHON=..." >&2
+      exit 1
+    fi
+    pyrodash_resolve_harness_python || exit 1
+    ;;
+  deepswe)
+    if [[ -z "${DEEPSWE_TASKS}" ]]; then
+      echo "[run ERROR] DEEPSWE_TASKS unset. Set tasks path in the web UI or export DEEPSWE_TASKS=..." >&2
+      exit 1
+    fi
+    if [[ -n "${HARNESS_PYTHON:-}" ]]; then
+      pyrodash_resolve_harness_python || true
+    fi
+    ;;
+  *)
+    if [[ -n "${HARNESS_PYTHON:-}" ]]; then
+      pyrodash_resolve_harness_python || true
+    fi
+    ;;
+esac
+echo "[run] PYTHON_BIN=${PYTHON_BIN} VLLM_BIN=${VLLM_BIN:-} HARNESS_PYTHON=${HARNESS_PYTHON:-}"
 
 # swe_20filter only — ignored for MODE=swe
 SWE20_FILTER="astropy__astropy-14182|astropy__astropy-14508|django__django-10999|django__django-12262|django__django-13023|django__django-14122|django__django-15268|django__django-16136|django__django-16631|matplotlib__matplotlib-26208|pydata__xarray-3677|pydata__xarray-4094|pylint-dev__pylint-6528|pytest-dev__pytest-6202|scikit-learn__scikit-learn-14894|sphinx-doc__sphinx-10449|sphinx-doc__sphinx-9591|sympy__sympy-13551|sympy__sympy-14531|sympy__sympy-17139"
@@ -219,7 +240,9 @@ export CUDA_VISIBLE_DEVICES
 export SLM_BACKEND SLM_PORT VLLM_PORT MAX_MODEL_LEN
 export ADAPTER_HOST ADAPTER_PORT OFFLOAD_MODE USE_LLM PYTHON_BIN
 export WORKERS HARNESS_WORKERS STEP_LIMIT
-export VLLM_BIN VLLM_CONDA_PREFIX VIRTUAL_ENV PATH
+export VENV_DIR VLLM_BIN VLLM_CONDA_PREFIX VIRTUAL_ENV PATH
+# HARNESS_PYTHON may be empty for deepswe/terminal
+export HARNESS_PYTHON="${HARNESS_PYTHON:-}"
 export OFFLOAD_LOG_DIR="${LOG_DIR}"
 export TOKEN_USAGE_DIR="${LOG_DIR}/adapter_stats"
 # Optional engine extras / binaries (only export when set — set -u safe)

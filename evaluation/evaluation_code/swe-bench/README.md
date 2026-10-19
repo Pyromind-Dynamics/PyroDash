@@ -38,12 +38,10 @@ Token / offload stats stay on the adapter: `GET http://<host>:<port>/stats` and 
 | `HARNESS_WORKERS` | `8` | harness parallelism |
 | `DATASET_NAME` | `princeton-nlp/SWE-bench_Verified` | harness dataset |
 | `RUN_ID` | `swebench_offload_pred` | harness run id |
-| `HARNESS_PYTHON` | `/workspace/.conda/bin/python` | Python with `swebench` + `docker` (base conda; **not** gui-360 / project `.venv`) |
+| `HARNESS_PYTHON` | (required) | Python with `swebench` + `docker` — set by `run_use` / web UI |
 
-Harness reports land under `verified/` (or `EVAL_OUTPUT_DIR/verified/` when used from `run_use`).
+Harness reports land under `verified/` (or `EVAL_OUTPUT_DIR/verified/` when used from `run_use`). Prefer launching via `run_use`; standalone:
 
 ```bash
-WORKERS=2 STEP_LIMIT=100 bash eval.sh --port 18027
-# optional override:
-HARNESS_PYTHON=/workspace/.conda/bin/python bash eval.sh --port 18027
+HARNESS_PYTHON=/path/to/swe_env/bin/python WORKERS=2 STEP_LIMIT=100 bash eval.sh --port 18027
 ```

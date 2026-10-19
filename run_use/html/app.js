@@ -130,6 +130,67 @@
     });
   }
 
+  const ENV_LS_KEY = "pyrodash_run_use_python_envs";
+
+  function loadSavedEnvs() {
+    try {
+      return JSON.parse(localStorage.getItem(ENV_LS_KEY) || "{}") || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveEnvs(venvDir, harnessPython) {
+    try {
+      localStorage.setItem(
+        ENV_LS_KEY,
+        JSON.stringify({ venv_dir: venvDir, harness_python: harnessPython })
+      );
+    } catch {
+      /* ignore quota */
+    }
+  }
+
+  async function initPythonEnvFields() {
+    const venvInput = $("#venv-dir");
+    const harnessInput = $("#harness-python");
+    const hint = $("#env-detect-hint");
+    const list = $("#conda-env-suggestions");
+    if (!venvInput || !harnessInput) return;
+
+    const saved = loadSavedEnvs();
+    let remoteDefaults = { venv_dir: "", harness_python: "" };
+    let suggestions = [];
+    try {
+      const res = await fetch(apiUrl("/api/envs"));
+      const data = await res.json();
+      suggestions = Array.isArray(data.envs) ? data.envs : [];
+      remoteDefaults = data.defaults || remoteDefaults;
+    } catch {
+      /* offline / old server */
+    }
+
+    if (list) {
+      list.innerHTML = suggestions
+        .map((p) => `<option value="${escapeHtml(p)}"></option>`)
+        .join("");
+    }
+
+    if (!venvInput.value) {
+      venvInput.value = saved.venv_dir || remoteDefaults.venv_dir || "";
+    }
+    if (!harnessInput.value) {
+      harnessInput.value = saved.harness_python || remoteDefaults.harness_python || "";
+    }
+
+    if (hint) {
+      const n = suggestions.length;
+      hint.textContent = n
+        ? `已扫描到 ${n} 个 conda/.venv，可下拉选择或直接粘贴路径。上次填写会保存在本机浏览器。`
+        : "未扫描到 conda envs；请直接填写环境目录或 python 路径。上次填写会保存在本机浏览器。";
+    }
+  }
+
   $("#mode-select")?.addEventListener("change", syncModeFields);
   $("#router-select")?.addEventListener("change", syncRouterFields);
   $("#offload-mode-select")?.addEventListener("change", syncRouterHelp);
@@ -140,6 +201,7 @@
   syncModeFields();
   syncRouterFields();
   syncSlmSource();
+  initPythonEnvFields();
 
   $$(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -201,6 +263,8 @@
     const slmModel = slmSource === "remote" ? (fd.get("slm_model") || "").trim() : "";
     const slmApiKey =
       slmSource === "remote" ? (fd.get("slm_api_key") || "dummy").trim() : "dummy";
+    const venvDir = (fd.get("venv_dir") || "").toString().trim();
+    const harnessPython = (fd.get("harness_python") || "").toString().trim();
     const body = {
       mode: (fd.get("mode") || "swe_20filter").toString(),
       cluster: (fd.get("cluster") || "us").toString(),
@@ -229,10 +293,23 @@
       cuda_visible_devices: (fd.get("cuda_visible_devices") || "0").trim(),
       run_id: (fd.get("run_id") || "").trim(),
       resume: fd.get("resume") === "1" || fd.get("resume") === "on",
+      venv_dir: venvDir,
+      harness_python: harnessPython,
     };
 
     if (body.resume && !body.run_id) {
       err.textContent = "勾选 resume 时必须填写已有 RUN_ID";
+      err.hidden = false;
+      return;
+    }
+
+    if (!body.venv_dir) {
+      err.textContent = "请填写 SLM / vLLM 环境路径（conda env 目录或 .venv）";
+      err.hidden = false;
+      return;
+    }
+    if (!body.harness_python) {
+      err.textContent = "请填写 SWE harness 环境路径（含 swebench / mini-extra 的 conda env 或 python）";
       err.hidden = false;
       return;
     }
@@ -272,6 +349,7 @@
           typeof detail === "string" ? detail : JSON.stringify(detail || res.statusText)
         );
       }
+      saveEnvs(body.venv_dir, body.harness_python);
       activeRunId = data.run_id;
       $("#progress").hidden = false;
       $("#progress-done").hidden = true;
