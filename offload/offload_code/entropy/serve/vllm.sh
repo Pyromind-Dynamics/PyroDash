@@ -3,15 +3,15 @@
 
 VLLM_BIN="${VLLM_BIN:-$(command -v vllm || true)}"
 VLLM_CONDA_PREFIX="${VLLM_CONDA_PREFIX:-${CONDA_PREFIX:-${VIRTUAL_ENV:-}}}"
-VLLM_HOST="${VLLM_HOST:-0.0.0.0}"
-VLLM_PORT="${VLLM_PORT:-8008}"
-VLLM_GPU_UTIL="${VLLM_GPU_UTIL:-0.90}"
-# Empty: do not pass --max-model-len; vLLM uses the model config.
-VLLM_MAX_MODEL_LEN="${VLLM_MAX_MODEL_LEN:-}"
+VLLM_HOST="${VLLM_HOST:-${SLM_HOST:-0.0.0.0}}"
+VLLM_PORT="${SLM_PORT:-${VLLM_PORT:-8008}}"
 # Must be >= ENTROPY_TOP_K so thinking-token top-k logprobs are returned.
 VLLM_MAX_LOGPROBS="${VLLM_MAX_LOGPROBS:-20}"
-# Qwen default template (no custom --chat-template).
-VLLM_EXTRA_ARGS="${VLLM_EXTRA_ARGS:---reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder}"
+# Editable CLI flags (UI / env). Appended as-is after host/port/model.
+# Add e.g. --max-model-len 128000 here when needed.
+if [[ ! -v VLLM_EXTRA_ARGS ]]; then
+  VLLM_EXTRA_ARGS="--gpu-memory-utilization 0.90 --tensor-parallel-size 1 --trust-remote-code --max-logprobs ${VLLM_MAX_LOGPROBS} --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder"
+fi
 VLLM_READY_TIMEOUT_SEC="${VLLM_READY_TIMEOUT_SEC:-1800}"
 
 VLLM_PID=""
@@ -67,23 +67,19 @@ start_vllm() {
 
   mkdir -p "${out_dir}"
   VLLM_LOG="${out_dir}/vllm_serve.log"
+  ln -sfn "vllm_serve.log" "${out_dir}/slm_serve.log"
 
   local -a cmd=(
     "${VLLM_BIN}" serve "${model_path}"
     --host "${VLLM_HOST}"
     --port "${VLLM_PORT}"
     --served-model-name "${served_name}"
-    --gpu-memory-utilization "${VLLM_GPU_UTIL}"
-    --tensor-parallel-size 1
-    --trust-remote-code
-    --max-logprobs "${VLLM_MAX_LOGPROBS}"
   )
-  if [[ -n "${VLLM_MAX_MODEL_LEN}" ]]; then
-    cmd+=(--max-model-len "${VLLM_MAX_MODEL_LEN}")
-  fi
   # shellcheck disable=SC2206
   local -a extra=( ${VLLM_EXTRA_ARGS} )
-  cmd+=("${extra[@]}")
+  if ((${#extra[@]})); then
+    cmd+=("${extra[@]}")
+  fi
 
   local gpu_vis="${CUDA_VISIBLE_DEVICES:-0}"
   local ld_prefix=""
@@ -92,6 +88,7 @@ start_vllm() {
   fi
   _vllm_log "starting CUDA_VISIBLE_DEVICES=${gpu_vis}: ${model_path} (served-model-name=${served_name})"
   _vllm_log "listen ${VLLM_HOST}:${VLLM_PORT}  log -> ${VLLM_LOG}"
+  _vllm_log "extra: ${VLLM_EXTRA_ARGS}"
   CUDA_VISIBLE_DEVICES="${gpu_vis}" \
     CONDA_PREFIX="${VLLM_CONDA_PREFIX:-}" \
     LD_LIBRARY_PATH="${ld_prefix}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" \

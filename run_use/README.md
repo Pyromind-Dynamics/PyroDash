@@ -13,6 +13,10 @@
 
 ROUTER：`tag` / `entropy`（需 LLM）或 **`slm_only`**（仅小模型，不注入 offload 提示词）。
 
+本地小模型引擎：`SLM_BACKEND=vllm|sglang`（默认 vllm）。网页「本地权重」可选引擎并改 port / GPU / parser 等高级参数；远程 API 不启本地引擎。
+
+**Resume（断点续跑）**：显式开启。Web 勾选 `resume` 并填已有 `RUN_ID`；CLI 设 `RUN_ID=... RESUME=1`。同名且未勾选 resume 仍 409。SWE / `swe_20filter` 靠 `preds.json` 跳过已完成实例；旧进程仍在跑则拒绝。
+
 历史结果页：左右分栏预览文件；`.traj.json` 渲染为对话（保留 `<|llm_offload|>` 标记）。
 
 ## CLI
@@ -37,6 +41,16 @@ MODEL_PATH=... LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
 # Terminal-Bench
 MODE=terminal N_TASKS=1 MODEL_PATH=... LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash run_use/run_sh/run_coding.sh
+
+# Resume 同名 run（SWE 跳过 preds.json 已有题）
+MODE=swe_20filter RUN_ID=my_run RESUME=1 MODEL_PATH=... \
+LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+  bash run_use/run_sh/run_coding.sh
+
+# 本地用 SGLang 起小模型（需已安装 sglang）
+MODE=swe_20filter SLM_BACKEND=sglang SLM_PORT=8007 MODEL_PATH=... \
+LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+  bash run_use/run_sh/run_coding.sh
 ```
 
 脚本会自动 `source /workspace/work/mjy/.venv`（可用 `VENV_DIR` 覆盖）。
@@ -48,7 +62,7 @@ cd run_use/html
 python server.py   # http://0.0.0.0:8787/
 ```
 
-页面 MODE 下拉可选四种；`deepswe` / `terminal` 会显示各自参数（tasks 路径、dataset、N_TASKS 等）。进度默认 **live** 日志（含 vLLM）。
+页面 MODE 下拉可选四种；`deepswe` / `terminal` 会显示各自参数（tasks 路径、dataset、N_TASKS 等）。进度默认 **live** 日志（含 `slm_serve`）。`RUN_ID` 空=新建；续跑需填已有 id 并勾选 **resume**。本地权重可选 **vllm / sglang**。
 
 ## 布局
 

@@ -55,22 +55,55 @@ class StartRunRequest(BaseModel):
     llm_api_key: str = ""
     llm_model: str = ""
     adapter_port: int = 18027
-    vllm_port: int = 8007
+    slm_port: int = 8007
+    vllm_port: int = 8007  # alias for slm_port
+    slm_backend: str = "vllm"  # vllm | sglang
+    slm_tp_size: int = 1  # legacy; prefer flags inside vllm/sglang_extra_args
+    max_model_len: str = ""
+    vllm_gpu_util: float = 0.90  # legacy
+    sglang_mem_fraction: float = 0.90  # legacy
+    tool_call_parser: str = "qwen3_coder"  # legacy
+    reasoning_parser: str = "qwen3"  # legacy
+    vllm_extra_args: str = (
+        "--gpu-memory-utilization 0.90 --tensor-parallel-size 1 --trust-remote-code "
+        "--reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder"
+    )
+    sglang_extra_args: str = (
+        "--tp 1 --mem-fraction-static 0.90 --tool-call-parser qwen3_coder --reasoning-parser qwen3"
+    )
     offload_mode: str = "handoff"
     workers: int = 4
     harness_workers: int = 8
+    step_limit: int = 150  # SWE agent.step_limit
     n_concurrent: Optional[int] = None
     n_tasks: str = ""  # empty = all; number as string for optional
     deepswe_tasks: str = "/workspace/work/mjy/eval/deep-swe/tasks"
     tb_dataset: str = "terminal-bench/terminal-bench-2-1"
     cuda_visible_devices: str = "0"
     run_id: str = ""
+    resume: bool = False
 
 
 def _require_run_id(run_id: str) -> str:
     if not SAFE_RUN_ID.match(run_id):
         raise HTTPException(status_code=400, detail="invalid run_id")
     return run_id
+
+
+def _pid_alive(pid: Any) -> bool:
+    try:
+        pid_i = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid_i <= 0:
+        return False
+    try:
+        os.kill(pid_i, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def _run_dir(run_id: str) -> Path:
@@ -326,17 +359,43 @@ def start_run(body: StartRunRequest) -> JSONResponse:
     if not RUN_SH.is_file():
         raise HTTPException(status_code=500, detail=f"missing {RUN_SH}")
 
-    run_id = body.run_id.strip() or f"{body.mode}_{time.strftime('%Y%m%d_%H%M%S')}"
+    explicit_run_id = body.run_id.strip()
+    want_resume = bool(body.resume)
+    if want_resume and not explicit_run_id:
+        raise HTTPException(status_code=400, detail="resume=true requires an existing run_id")
+
+    run_id = explicit_run_id or f"{body.mode}_{time.strftime('%Y%m%d_%H%M%S')}"
     _require_run_id(run_id)
     run_dir = OUTPUT_DIR / run_id
-    if run_dir.exists():
-        raise HTTPException(status_code=409, detail=f"run_id already exists: {run_id}")
+    resumed = False
+    prev_status: dict[str, Any] = {}
 
-    run_dir.mkdir(parents=True, exist_ok=False)
+    if run_dir.exists():
+        prev_status = _read_json(run_dir / "status.json")
+        if _pid_alive(prev_status.get("pid")):
+            raise HTTPException(
+                status_code=409,
+                detail=f"run still running (pid={prev_status.get('pid')}): stop it before resume",
+            )
+        if not want_resume:
+            raise HTTPException(
+                status_code=409,
+                detail=f"run_id already exists: {run_id} (set resume=true to continue)",
+            )
+        resumed = True
+    elif want_resume:
+        raise HTTPException(status_code=404, detail=f"run_id not found for resume: {run_id}")
+
+    run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
 
     n_concurrent = body.n_concurrent if body.n_concurrent is not None else body.workers
     use_llm = "false" if body.router_mode == "slm_only" else "true"
+    slm_backend = (body.slm_backend or "vllm").strip().lower()
+    if slm_backend not in ("vllm", "sglang"):
+        raise HTTPException(status_code=400, detail="slm_backend must be vllm or sglang")
+    # Prefer slm_port; fall back to legacy vllm_port when client only sends that.
+    slm_port = int(body.slm_port or body.vllm_port or 8007)
     env = os.environ.copy()
     env.update(
         {
@@ -346,9 +405,12 @@ def start_run(body: StartRunRequest) -> JSONResponse:
             "OFFLOAD_MODE": body.offload_mode,
             "USE_LLM": use_llm,
             "ADAPTER_PORT": str(body.adapter_port),
-            "VLLM_PORT": str(body.vllm_port),
+            "SLM_BACKEND": slm_backend,
+            "SLM_PORT": str(slm_port),
+            "VLLM_PORT": str(slm_port),
             "WORKERS": str(body.workers),
             "HARNESS_WORKERS": str(body.harness_workers),
+            "STEP_LIMIT": str(max(1, int(body.step_limit or 150))),
             "N_CONCURRENT": str(n_concurrent),
             "CUDA_VISIBLE_DEVICES": body.cuda_visible_devices,
             "LLM_BASE_URL": body.llm_base_url or "http://127.0.0.1:0/v1",
@@ -357,8 +419,19 @@ def start_run(body: StartRunRequest) -> JSONResponse:
             "SLM_API_KEY": body.slm_api_key or "dummy",
             "DEEPSWE_TASKS": body.deepswe_tasks,
             "TB_DATASET": body.tb_dataset,
+            "RESUME": "1" if resumed else "0",
         }
     )
+    # Context length / any other engine flags belong inside EXTRA_ARGS (--max-model-len / --context-length).
+    env.pop("MAX_MODEL_LEN", None)
+    if (body.vllm_extra_args or "").strip():
+        env["VLLM_EXTRA_ARGS"] = body.vllm_extra_args.strip()
+    else:
+        env.pop("VLLM_EXTRA_ARGS", None)
+    if (body.sglang_extra_args or "").strip():
+        env["SGLANG_EXTRA_ARGS"] = body.sglang_extra_args.strip()
+    else:
+        env.pop("SGLANG_EXTRA_ARGS", None)
     n_tasks = (body.n_tasks or "").strip()
     if n_tasks:
         env["N_TASKS"] = n_tasks
@@ -373,9 +446,11 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         env["SLM_MODEL"] = body.slm_model
         env.pop("MODEL_PATH", None)
 
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
     web_log = run_dir / "logs" / "web_launch.log"
-    with web_log.open("w") as logf:
-        logf.write(f"starting {RUN_SH} mode={body.mode} run_id={run_id}\n")
+    with web_log.open("a" if resumed else "w") as logf:
+        action = "resuming" if resumed else "starting"
+        logf.write(f"{action} {RUN_SH} mode={body.mode} run_id={run_id}\n")
         logf.flush()
         proc = subprocess.Popen(
             ["bash", str(RUN_SH)],
@@ -387,29 +462,34 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         )
 
     status = {
+        **prev_status,
         "run_id": run_id,
         "mode": body.mode,
         "router_mode": body.router_mode,
         "offload_mode": body.offload_mode,
         "phase": "starting_adapter",
-        "message": "launched from web UI",
-        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "message": "resuming from web UI" if resumed else "launched from web UI",
+        "updated_at": now,
         "pid": proc.pid,
     }
+    status.setdefault("started_at", now)
+    status.pop("finished_at", None)
     (run_dir / "status.json").write_text(json.dumps(status, indent=2) + "\n")
 
-    return JSONResponse({"run_id": run_id, "pid": proc.pid, "status": status})
+    return JSONResponse(
+        {"run_id": run_id, "pid": proc.pid, "resumed": resumed, "status": status}
+    )
 
 
-def _vllm_path_from_adapter_api(adapter_api_text: str) -> Optional[Path]:
+def _slm_log_path_from_adapter_api(adapter_api_text: str) -> Optional[Path]:
     for line in adapter_api_text.splitlines():
-        if "vllm_serve.log" in line and ("log ->" in line or "log=" in line or "->" in line):
-            m = re.search(r"(/[^\s]+vllm_serve\.log)", line)
-            if m:
-                p = Path(m.group(1))
-                if p.is_file():
-                    return p
+        if any(name in line for name in ("slm_serve.log", "vllm_serve.log", "sglang_serve.log")):
+            if "log ->" in line or "log=" in line or "->" in line:
+                m = re.search(r"(/[^\s]+(?:slm|vllm|sglang)_serve\.log)", line)
+                if m:
+                    p = Path(m.group(1))
+                    if p.is_file() or p.is_symlink():
+                        return p
     return None
 
 
@@ -417,20 +497,31 @@ def _collect_run_logs(run_dir: Path, status: dict[str, Any], log_tail: int = 48_
     log_dir = run_dir / "logs"
     logs: dict[str, str] = {
         "adapter_api": _tail_file(log_dir / "adapter_api.log", log_tail),
-        "vllm_serve": _tail_file(log_dir / "vllm_serve.log", log_tail),
+        "slm_serve": "",
+        "vllm_serve": "",  # legacy alias filled below
         "adapter": _tail_file(log_dir / "adapter.log", log_tail),
         "eval": _tail_file(log_dir / "eval.log", log_tail),
         "web_launch": _tail_file(log_dir / "web_launch.log", log_tail),
         "minisweagent": "",
     }
-    if not logs["vllm_serve"] and log_dir.is_dir():
-        for p in sorted(log_dir.rglob("vllm_serve.log")):
-            logs["vllm_serve"] = _tail_file(p, log_tail)
+    for name in ("slm_serve.log", "vllm_serve.log", "sglang_serve.log"):
+        text = _tail_file(log_dir / name, log_tail)
+        if text:
+            logs["slm_serve"] = text
             break
-    if not logs["vllm_serve"]:
-        hinted = _vllm_path_from_adapter_api(logs.get("adapter_api") or "")
+    if not logs["slm_serve"] and log_dir.is_dir():
+        for pattern in ("slm_serve.log", "vllm_serve.log", "sglang_serve.log"):
+            for p in sorted(log_dir.rglob(pattern)):
+                logs["slm_serve"] = _tail_file(p, log_tail)
+                if logs["slm_serve"]:
+                    break
+            if logs["slm_serve"]:
+                break
+    if not logs["slm_serve"]:
+        hinted = _slm_log_path_from_adapter_api(logs.get("adapter_api") or "")
         if hinted is not None:
-            logs["vllm_serve"] = _tail_file(hinted, log_tail)
+            logs["slm_serve"] = _tail_file(hinted, log_tail)
+    logs["vllm_serve"] = logs["slm_serve"]
     if not logs["adapter"] and log_dir.is_dir():
         for p in sorted(log_dir.rglob("adapter.log")):
             if p.name == "adapter_api.log":
@@ -457,7 +548,7 @@ def _collect_run_logs(run_dir: Path, status: dict[str, Any], log_tail: int = 48_
     chunks: list[str] = []
     for key, title in (
         ("adapter_api", "adapter_api (api.sh stdout)"),
-        ("vllm_serve", "vllm_serve"),
+        ("slm_serve", "slm_serve (vllm/sglang)"),
         ("minisweagent", "minisweagent (instance progress)"),
         ("eval", "eval"),
         ("adapter", "adapter"),

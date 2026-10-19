@@ -51,7 +51,10 @@ ROUTER_MODE="${ROUTER_MODE:-tag}"
 OFFLOAD_MODE="${OFFLOAD_MODE:-handoff}"
 USE_LLM="${USE_LLM:-true}"
 
-VLLM_PORT="${VLLM_PORT:-8007}"
+SLM_BACKEND="${SLM_BACKEND:-vllm}"
+SLM_PORT="${SLM_PORT:-${VLLM_PORT:-8007}}"
+VLLM_PORT="${SLM_PORT}"
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-}"
 ADAPTER_HOST="${ADAPTER_HOST:-0.0.0.0}"
 ADAPTER_PORT="${ADAPTER_PORT:-18027}"
 
@@ -125,11 +128,13 @@ fi
 RUN_DIR="${RUN_USE_ROOT}/output/${RUN_ID}"
 LOG_DIR="${RUN_DIR}/logs"
 EVAL_OUT="${RUN_DIR}/${MODE}"
+# Never wipe EVAL_OUT / preds.json — same RUN_ID reuses artifacts (SWE skips done).
 mkdir -p "${LOG_DIR}" "${EVAL_OUT}"
 
 STATUS_FILE="${RUN_DIR}/status.json"
 ADAPTER_PID=""
 PIPELINE_EXIT=1
+RESUME="${RESUME:-0}"
 
 write_status() {
   local phase="$1"
@@ -158,6 +163,8 @@ data = {
 }
 if phase == "starting_adapter" and "started_at" not in data:
     data["started_at"] = data["updated_at"]
+if phase in ("starting_adapter", "evaluating"):
+    data.pop("finished_at", None)
 if phase in ("done", "failed"):
     data["finished_at"] = data["updated_at"]
 if extra:
@@ -200,19 +207,33 @@ on_exit() {
 }
 trap on_exit EXIT INT TERM
 
-write_status "starting_adapter" "launching ${ROUTER_MODE} offload adapter"
+if [[ "${RESUME}" == "1" || "${RESUME}" == "true" || "${RESUME}" == "yes" ]]; then
+  write_status "starting_adapter" "resuming ${ROUTER_MODE} offload adapter"
+else
+  write_status "starting_adapter" "launching ${ROUTER_MODE} offload adapter"
+fi
 
 export MODEL_PATH SLM_BASE_URL SLM_API_KEY SLM_MODEL
 export LLM_BASE_URL LLM_API_KEY LLM_MODEL
 export CUDA_VISIBLE_DEVICES
-export VLLM_PORT ADAPTER_HOST ADAPTER_PORT OFFLOAD_MODE USE_LLM PYTHON_BIN
+export SLM_BACKEND SLM_PORT VLLM_PORT MAX_MODEL_LEN
+export ADAPTER_HOST ADAPTER_PORT OFFLOAD_MODE USE_LLM PYTHON_BIN
+export WORKERS HARNESS_WORKERS STEP_LIMIT
 export VLLM_BIN VLLM_CONDA_PREFIX VIRTUAL_ENV PATH
 export OFFLOAD_LOG_DIR="${LOG_DIR}"
 export TOKEN_USAGE_DIR="${LOG_DIR}/adapter_stats"
+# Optional engine extras / binaries (only export when set — set -u safe)
+[[ -v VLLM_EXTRA_ARGS ]] && export VLLM_EXTRA_ARGS
+[[ -v SGLANG_EXTRA_ARGS ]] && export SGLANG_EXTRA_ARGS
+[[ -v SGLANG_BIN ]] && export SGLANG_BIN
+[[ -v SGLANG_PYTHON ]] && export SGLANG_PYTHON
 
 ADAPTER_LOG="${LOG_DIR}/adapter_api.log"
-echo "[run] MODE=${MODE} RUN_ID=${RUN_ID}"
+echo "[run] MODE=${MODE} RUN_ID=${RUN_ID} RESUME=${RESUME} SLM_BACKEND=${SLM_BACKEND}"
 echo "[run] RUN_DIR=${RUN_DIR}"
+if [[ "${RESUME}" == "1" || "${RESUME}" == "true" || "${RESUME}" == "yes" ]]; then
+  echo "[run] resume: keeping existing ${EVAL_OUT} (SWE skips preds.json keys)"
+fi
 echo "[run] starting ${API_SH} → ${ADAPTER_LOG}"
 
 setsid bash "${API_SH}" >"${ADAPTER_LOG}" 2>&1 &
@@ -346,15 +367,23 @@ wait "${PROGRESS_PID}" 2>/dev/null || true
 tail -n 40 "${EVAL_LOG}" || true
 
 # Upsert this run into run_use/result.md (same columns / prices as history tables)
+# Use a heredoc (not python -c with nested quotes) — nested f\"...\" breaks bash parsing.
 if [[ -f "${RUN_USE_ROOT}/html/metrics.py" ]]; then
   (
     cd "${RUN_USE_ROOT}/html"
-    "${PYTHON_BIN}" -c "
+    "${PYTHON_BIN}" - "${RUN_DIR}" "${RUN_USE_ROOT}/result.md" <<'PY'
 from pathlib import Path
+import sys
 from metrics import persist_run_to_result_md
-out = persist_run_to_result_md(Path('${RUN_DIR}'), Path('${RUN_USE_ROOT}/result.md'))
-print(f\"[run] result.md written={out.get('written')} mode={out.get('mode')} score={out.get('row', {}).get('score')}\")
-"
+
+run_dir, result_md = Path(sys.argv[1]), Path(sys.argv[2])
+out = persist_run_to_result_md(run_dir, result_md)
+row = out.get("row") or {}
+print(
+    f"[run] result.md written={out.get('written')} "
+    f"mode={out.get('mode')} score={row.get('score')}"
+)
+PY
   ) || true
 fi
 

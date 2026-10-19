@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Start entropy-routing adapter. Edit the config block, then: bash api.sh
-# Ctrl+C stops adapter (+ local vLLM if started).
+# Ctrl+C stops adapter (+ local SLM server if started).
 #
 # SLM can be:
-#   A) local weights  — set MODEL_PATH (directory); this script starts vLLM
-#   B) remote API     — set SLM_BASE_URL + SLM_MODEL (+ SLM_API_KEY); skip vLLM
+#   A) local weights  — set MODEL_PATH; starts vLLM or SGLang (SLM_BACKEND)
+#   B) remote API     — set SLM_BASE_URL + SLM_MODEL (+ SLM_API_KEY); skip local serve
 #
 # Routing: mean thinking-token entropy (top-k logprobs, nats) > ENTROPY_THRESHOLD
 # -> drop SLM turn and let the LLM rewrite.
-# Remote SLM must support logprobs / top_logprobs (vLLM --max-logprobs).
+# SLM must support OpenAI logprobs / top_logprobs (vLLM: --max-logprobs).
 set -euo pipefail
 
 OFFLOAD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,7 +19,7 @@ PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
 # =========================
 
 # --- Small model (pick ONE) ---
-# A) Local path → start vLLM on VLLM_HOST:VLLM_PORT
+# A) Local path → start SLM_BACKEND on SLM_PORT
 MODEL_PATH="${MODEL_PATH:-}"
 # B) Remote OpenAI-compatible SLM (if SLM_BASE_URL is set, MODEL_PATH is ignored)
 SLM_BASE_URL="${SLM_BASE_URL:-}"
@@ -35,11 +35,17 @@ LLM_MODEL="${LLM_MODEL:-your-llm-model}"
 # LLM rewrite reasoning_effort; empty = omit field
 LLM_REASONING_EFFORT="${LLM_REASONING_EFFORT:-max}"
 
+# Local engine: vllm | sglang
+SLM_BACKEND="${SLM_BACKEND:-vllm}"
 # Network: bind 0.0.0.0 so external / web clients can reach the API
-VLLM_HOST="${VLLM_HOST:-0.0.0.0}"
-VLLM_PORT="${VLLM_PORT:-8008}"
+SLM_HOST="${SLM_HOST:-${VLLM_HOST:-0.0.0.0}}"
+SLM_PORT="${SLM_PORT:-${VLLM_PORT:-8008}}"
+VLLM_HOST="${SLM_HOST}"
+VLLM_PORT="${SLM_PORT}"
 ADAPTER_HOST="${ADAPTER_HOST:-0.0.0.0}"
 ADAPTER_PORT="${ADAPTER_PORT:-18028}"
+
+# Tunables live in VLLM_EXTRA_ARGS / SGLANG_EXTRA_ARGS (CLI -- flags). Defaults in serve/*.sh.
 
 # Entropy routing (k=20 => entropy in [0, ln(20)≈2.996] nats)
 ENTROPY_TOP_K="${ENTROPY_TOP_K:-20}"
@@ -62,25 +68,33 @@ MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-8192}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-}"
 # =========================
 
+case "${SLM_BACKEND}" in
+  vllm|sglang) ;;
+  *) echo "ERROR: SLM_BACKEND must be vllm or sglang (got ${SLM_BACKEND})" >&2; exit 1 ;;
+esac
+
 source "${OFFLOAD_ROOT}/serve/common.sh"
 source "${OFFLOAD_ROOT}/serve/vllm.sh"
-VLLM_HOST="${VLLM_HOST}"
-VLLM_PORT="${VLLM_PORT}"
+source "${OFFLOAD_ROOT}/serve/sglang.sh"
+VLLM_HOST="${SLM_HOST}"
+VLLM_PORT="${SLM_PORT}"
 VLLM_MAX_MODEL_LEN="${MAX_MODEL_LEN}"
+SGLANG_HOST="${SLM_HOST}"
+SGLANG_PORT="${SLM_PORT}"
 
-START_LOCAL_VLLM=0
+START_LOCAL_SLM=0
 if [[ -n "${SLM_BASE_URL}" ]]; then
   [[ -n "${SLM_MODEL}" ]] || { echo "ERROR: SLM_MODEL is required when SLM_BASE_URL is set" >&2; exit 1; }
   SERVED_NAME="${SLM_MODEL}"
   echo "[api] SLM mode=remote  ${SLM_MODEL} @ ${SLM_BASE_URL}"
 elif [[ -n "${MODEL_PATH}" ]]; then
   [[ -d "${MODEL_PATH}" ]] || { echo "ERROR: MODEL_PATH missing: ${MODEL_PATH}" >&2; exit 1; }
-  START_LOCAL_VLLM=1
+  START_LOCAL_SLM=1
   SERVED_NAME="$(basename "${MODEL_PATH}")"
-  SLM_BASE_URL="http://127.0.0.1:${VLLM_PORT}/v1"
+  SLM_BASE_URL="http://127.0.0.1:${SLM_PORT}/v1"
   SLM_API_KEY="${SLM_API_KEY:-dummy}"
   SLM_MODEL="${SERVED_NAME}"
-  echo "[api] SLM mode=local   ${MODEL_PATH} → vLLM :${VLLM_PORT}"
+  echo "[api] SLM mode=local   ${MODEL_PATH} → ${SLM_BACKEND} :${SLM_PORT}"
 else
   echo "ERROR: set either MODEL_PATH (local) or SLM_BASE_URL+SLM_MODEL (remote API)" >&2
   exit 1
@@ -91,7 +105,7 @@ fi
 
 RUN_STAMP="$(date '+%Y%m%d_%H%M%S')"
 SAFE_NAME="$(echo "${SERVED_NAME}" | tr '/: ' '___')"
-# OFFLOAD_LOG_DIR: when set (e.g. by run_use), put vLLM/adapter logs there for the web UI.
+# OFFLOAD_LOG_DIR: when set (e.g. by run_use), put SLM/adapter logs there for the web UI.
 LOG_DIR="${OFFLOAD_LOG_DIR:-${OFFLOAD_ROOT}/logs/${SAFE_NAME}_${RUN_STAMP}}"
 mkdir -p "${LOG_DIR}/adapter_stats"
 
@@ -116,8 +130,12 @@ cleanup_adapter() {
 
 cleanup_all() {
   cleanup_adapter
-  if [[ "${START_LOCAL_VLLM}" -eq 1 ]]; then
-    cleanup_vllm
+  if [[ "${START_LOCAL_SLM}" -eq 1 ]]; then
+    if [[ "${SLM_BACKEND}" == "sglang" ]]; then
+      cleanup_sglang
+    else
+      cleanup_vllm
+    fi
   fi
 }
 trap cleanup_all EXIT INT TERM
@@ -185,8 +203,12 @@ start_adapter() {
   wait_adapter_ready
 }
 
-if [[ "${START_LOCAL_VLLM}" -eq 1 ]]; then
-  start_vllm "${MODEL_PATH}" "${SERVED_NAME}" "${LOG_DIR}"
+if [[ "${START_LOCAL_SLM}" -eq 1 ]]; then
+  if [[ "${SLM_BACKEND}" == "sglang" ]]; then
+    start_sglang "${MODEL_PATH}" "${SERVED_NAME}" "${LOG_DIR}"
+  else
+    start_vllm "${MODEL_PATH}" "${SERVED_NAME}" "${LOG_DIR}"
+  fi
 fi
 start_adapter
 
@@ -194,8 +216,8 @@ HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 HOST_IP="${HOST_IP:-127.0.0.1}"
 
 SLM_LINE="  SLM             : ${SLM_MODEL} @ ${SLM_BASE_URL}"
-if [[ "${START_LOCAL_VLLM}" -eq 1 ]]; then
-  SLM_LINE="  vLLM SLM        : http://${HOST_IP}:${VLLM_PORT}/v1  (${SERVED_NAME})"
+if [[ "${START_LOCAL_SLM}" -eq 1 ]]; then
+  SLM_LINE="  ${SLM_BACKEND} SLM    : http://${HOST_IP}:${SLM_PORT}/v1  (${SERVED_NAME})"
 fi
 
 cat <<EOF

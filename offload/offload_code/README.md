@@ -1,24 +1,29 @@
 # offload_code
 
-Standalone **code offload adapters**: start a public HTTP API that wraps an SLM (local vLLM **or** remote OpenAI-compatible API) and relays to a remote LLM. Evaluation harnesses and web UIs are **clients** of this API — they are not part of this package.
+Standalone **code offload adapters**: start a public HTTP API that wraps an SLM (local **vLLM / SGLang** **or** remote OpenAI-compatible API) and relays to a remote LLM. Evaluation harnesses and web UIs are **clients** of this API — they are not part of this package.
 
 ## Mechanisms
 
 | Dir | Trigger | Default ports |
 |-----|---------|---------------|
-| [`tag/`](tag/) | SLM emits `<\|llm_offload\|>N<\|\llm_offload\|>` inside thinking | vLLM `8007`, adapter `18027` |
-| [`entropy/`](entropy/) | Mean thinking-token entropy (top-k logprobs) > threshold → LLM rewrite | vLLM `8008`, adapter `18028` |
+| [`tag/`](tag/) | SLM emits `<\|llm_offload\|>N<\|\llm_offload\|>` inside thinking | SLM `8007`, adapter `18027` |
+| [`entropy/`](entropy/) | Mean thinking-token entropy (top-k logprobs) > threshold → LLM rewrite | SLM `8008`, adapter `18028` |
 
 Each tree is independently launchable (`api.sh`). [`shared/`](shared/) holds merged reference helpers (`protocol`, `openai_api`, `stats`, `tools`); runtime adapters under `tag/` / `entropy/` stay self-contained.
 
 ## Quick start
 
 ```bash
-# Local SLM weights (starts vLLM):
+# Local SLM weights (default SLM_BACKEND=vllm):
 MODEL_PATH=/path/to/slm LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash offload/offload_code/tag/api.sh
 
-# Or remote SLM API (skip vLLM):
+# Local SGLang (tools + OpenAI /v1; entropy needs chat logprobs):
+MODEL_PATH=/path/to/slm SLM_BACKEND=sglang \
+  LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+  bash offload/offload_code/tag/api.sh
+
+# Or remote SLM API (skip local engine):
 SLM_BASE_URL=http://slm-host:8000/v1 SLM_API_KEY=... SLM_MODEL=my-slm \
   LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash offload/offload_code/tag/api.sh
@@ -44,7 +49,7 @@ api_base = http://<host>:<ADAPTER_PORT>
 api_key  = dummy   # or any non-empty string
 ```
 
-vLLM uses the **Qwen default chat template** (no custom jinja).
+Local vLLM/SGLang use the **Qwen default chat template** (no custom jinja) plus tool/reasoning parsers (`TOOL_CALL_PARSER`, `REASONING_PARSER`).
 
 ## Token accounting
 
@@ -61,21 +66,22 @@ Persisted under `logs/<run>/adapter_stats/` (`summary.json`, `sessions/`, `token
 Common:
 
 - SLM (one of):
-  - `MODEL_PATH` — local weights; script starts vLLM (`CUDA_VISIBLE_DEVICES`, `VLLM_HOST`/`VLLM_PORT`)
-  - `SLM_BASE_URL` + `SLM_MODEL` (+ `SLM_API_KEY`) — remote OpenAI-compatible SLM; no local vLLM
+  - `MODEL_PATH` — local weights; script starts `SLM_BACKEND` (`vllm`|`sglang`) on `SLM_PORT` (alias `VLLM_PORT`)
+  - `SLM_BASE_URL` + `SLM_MODEL` (+ `SLM_API_KEY`) — remote OpenAI-compatible SLM; no local engine
+- Engine: `SLM_BACKEND`, `SLM_PORT`, `CUDA_VISIBLE_DEVICES`, `MAX_MODEL_LEN`, plus editable CLI strings `VLLM_EXTRA_ARGS` / `SGLANG_EXTRA_ARGS` (defaults already include `--gpu-memory-utilization` / `--tp` / parsers 等)
 - LLM: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
 - `ADAPTER_HOST` / `ADAPTER_PORT` (default `0.0.0.0`)
 - SLM / LLM sampling, `MAX_NEW_TOKENS`, `MAX_MODEL_LEN`
 
 Tag-only: `OFFLOAD_MODE=handoff|rewrite|keep`
 
-Entropy-only: `ENTROPY_TOP_K`, `ENTROPY_THRESHOLD`, `LLM_REASONING_EFFORT`
+Entropy-only: `ENTROPY_TOP_K`, `ENTROPY_THRESHOLD`, `LLM_REASONING_EFFORT` (vLLM also sets `--max-logprobs`)
 
-Optional: `PYTHON_BIN`, `VLLM_BIN`, `TOKEN_USAGE_DIR` (extra token_usage mirror).
+Optional: `PYTHON_BIN`, `VLLM_BIN`, `SGLANG_BIN` / `SGLANG_PYTHON`, `TOKEN_USAGE_DIR` (extra token_usage mirror).
 
 ## Dependencies
 
 ```bash
 pip install -r requirements.txt
-# plus a working `vllm` on PATH (or set VLLM_BIN)
+# plus a working `vllm` on PATH (or set VLLM_BIN); for SGLang: pip install sglang
 ```

@@ -176,6 +176,20 @@ label.full {
   grid-column: 1 / -1;
 }
 
+label.checkbox-row {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+}
+
+label.checkbox-row input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .mode-field[hidden],
 label[hidden],
 #offload-mode-label[hidden],
@@ -642,12 +656,71 @@ input:focus, select:focus {
   background: rgba(110, 168, 254, 0.1);
 }
 
+.slm-local,
 .slm-remote {
   display: contents;
 }
 
+.slm-local[hidden],
 .slm-remote[hidden] {
   display: none !important;
+}
+
+.slm-advanced {
+  grid-column: 1 / -1;
+  margin-top: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.55rem 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.slm-advanced > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  user-select: none;
+}
+
+.slm-advanced-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem 1rem;
+  margin-top: 0.75rem;
+}
+
+.slm-advanced-grid label[hidden],
+.backend-vllm[hidden],
+.backend-sglang[hidden] {
+  display: none !important;
+}
+
+.slm-advanced .field-hint {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin: -0.1rem 0 0.15rem;
+}
+
+.slm-advanced textarea {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text);
+  background: var(--bg0);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.55rem 0.65rem;
+  resize: vertical;
+  min-height: 4.2rem;
+  width: 100%;
+  line-height: 1.4;
+}
+
+.slm-advanced textarea:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent-dim);
 }
 
 #adapter-port-label[hidden],

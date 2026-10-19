@@ -117,6 +117,17 @@
     const remote = $("#slm-remote-fields");
     if (local) local.hidden = source !== "local";
     if (remote) remote.hidden = source !== "remote";
+    syncSlmBackend();
+  }
+
+  function syncSlmBackend() {
+    const backend = $("#slm-backend")?.value || "vllm";
+    $$(".backend-vllm").forEach((el) => {
+      el.hidden = backend !== "vllm";
+    });
+    $$(".backend-sglang").forEach((el) => {
+      el.hidden = backend !== "sglang";
+    });
   }
 
   $("#mode-select")?.addEventListener("change", syncModeFields);
@@ -125,6 +136,7 @@
   $$('input[name="slm_source"]').forEach((el) => {
     el.addEventListener("change", syncSlmSource);
   });
+  $("#slm-backend")?.addEventListener("change", syncSlmBackend);
   syncModeFields();
   syncRouterFields();
   syncSlmSource();
@@ -201,16 +213,28 @@
       llm_model: router === "slm_only" ? "" : (fd.get("llm_model") || "").trim(),
       llm_api_key: router === "slm_only" ? "" : (fd.get("llm_api_key") || "").trim(),
       adapter_port: Number(fd.get("adapter_port") || 18027),
-      vllm_port: Number(fd.get("vllm_port") || 8007),
+      slm_backend: (fd.get("slm_backend") || "vllm").toString(),
+      slm_port: Number(fd.get("slm_port") || fd.get("vllm_port") || 8007),
+      vllm_port: Number(fd.get("slm_port") || fd.get("vllm_port") || 8007),
+      vllm_extra_args: (fd.get("vllm_extra_args") || "").toString().trim(),
+      sglang_extra_args: (fd.get("sglang_extra_args") || "").toString().trim(),
       workers: Number(fd.get("workers") || 4),
       harness_workers: Number(fd.get("harness_workers") || 8),
+      step_limit: Number(fd.get("step_limit") || 150),
       n_concurrent: nConcurrentRaw === "" ? null : Number(nConcurrentRaw),
       n_tasks: (fd.get("n_tasks") || "").toString().trim(),
       deepswe_tasks: (fd.get("deepswe_tasks") || "").trim(),
       tb_dataset: (fd.get("tb_dataset") || "").trim(),
       cuda_visible_devices: (fd.get("cuda_visible_devices") || "0").trim(),
       run_id: (fd.get("run_id") || "").trim(),
+      resume: fd.get("resume") === "1" || fd.get("resume") === "on",
     };
+
+    if (body.resume && !body.run_id) {
+      err.textContent = "勾选 resume 时必须填写已有 RUN_ID";
+      err.hidden = false;
+      return;
+    }
 
     if (slmSource === "local") {
       if (!body.model_path) {
@@ -250,7 +274,13 @@
       activeRunId = data.run_id;
       $("#progress").hidden = false;
       $("#progress-done").hidden = true;
-      $("#progress-run-id").textContent = `${data.run_id} · ${body.mode} · ${body.router_mode}`;
+      const resumeTag = data.resumed ? " · resume" : "";
+      $("#progress-run-id").textContent =
+        `${data.run_id} · ${body.mode} · ${body.router_mode}${resumeTag}`;
+      if (data.resumed) {
+        const phaseEl = $("#progress-phase");
+        if (phaseEl) phaseEl.textContent = `正在 resume ${data.run_id}`;
+      }
       startPolling(data.run_id);
     } catch (ex) {
       err.textContent = String(ex.message || ex);
