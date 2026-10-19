@@ -21,6 +21,8 @@ bash eval.sh --host 10.0.0.1 --port 18027
 3. `mini-extra swebench`（叠加 `config/env_testbed_path.yaml`：`bash -lc` + testbed conda PATH，与 `swe_run_offload` 对齐）→ `output/runs/preds.json`
 4. Official harness via `run_harness.py` (Docker API timeout 300s) → `output/verified/`
 
+`CLUSTER=us`（默认）走系统 `mini-extra` 和 Docker Hub 镜像。`CLUSTER=shanghai` 改写为阿里云镜像、`DOCKER_HOST=unix:///tmp/docker-rt.sock`，并在 harness 上加 namespace / GitHub raw 缓存。
+
 Token / offload stats stay on the adapter: `GET http://<host>:<port>/stats` and its `logs/.../adapter_stats/`.
 
 ## Options

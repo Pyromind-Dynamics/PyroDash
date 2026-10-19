@@ -203,6 +203,7 @@
       slmSource === "remote" ? (fd.get("slm_api_key") || "dummy").trim() : "dummy";
     const body = {
       mode: (fd.get("mode") || "swe_20filter").toString(),
+      cluster: (fd.get("cluster") || "us").toString(),
       router_mode: router,
       offload_mode: (fd.get("offload_mode") || "handoff").toString(),
       model_path: modelPath,

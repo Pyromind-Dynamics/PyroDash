@@ -24,6 +24,7 @@ pyrodash_activate_venv "${VENV_DIR:-${PYRODASH_VENV_DIR}}"
 # =========================
 
 MODE="${MODE:-swe_20filter}"
+CLUSTER="${CLUSTER:-us}"
 
 # --- Small model (pick ONE) ---
 MODEL_PATH="${MODEL_PATH:-}"
@@ -62,6 +63,12 @@ TB_DATASET="${TB_DATASET:-terminal-bench/terminal-bench-2-1}"
 
 RUN_ID="${RUN_ID:-${MODE}_$(date '+%Y%m%d_%H%M%S')}"
 # SWE harness verify → base conda (swebench + docker). Never gui-360 / .venv.
+# Shanghai prefers eval_code only when HARNESS_PYTHON was not set and that env can import the harness packages.
+if [[ "${CLUSTER}" == "shanghai" && -z "${HARNESS_PYTHON:-}" && -x /workspace/.conda/envs/eval_code/bin/python ]]; then
+  if /workspace/.conda/envs/eval_code/bin/python -c "import docker, swebench" >/dev/null 2>&1; then
+    export HARNESS_PYTHON=/workspace/.conda/envs/eval_code/bin/python
+  fi
+fi
 pyrodash_resolve_harness_python || true
 echo "[run] PYTHON_BIN=${PYTHON_BIN} VLLM_BIN=${VLLM_BIN:-} HARNESS_PYTHON=${HARNESS_PYTHON}"
 
@@ -75,6 +82,11 @@ case "${MODE}" in
   swe|swe_20filter|deepswe|terminal) ;;
   *) echo "[run ERROR] MODE must be swe|swe_20filter|deepswe|terminal (got ${MODE})" >&2; exit 1 ;;
 esac
+case "${CLUSTER}" in
+  us|shanghai) ;;
+  *) echo "[run ERROR] CLUSTER must be us|shanghai (got ${CLUSTER})" >&2; exit 1 ;;
+esac
+export CLUSTER
 case "${ROUTER_MODE}" in
   tag|entropy|slm_only) ;;
   *) echo "[run ERROR] ROUTER_MODE must be tag|entropy|slm_only (got ${ROUTER_MODE})" >&2; exit 1 ;;
@@ -127,10 +139,10 @@ write_status() {
   local phase="$1"
   local message="${2:-}"
   local extra="${3:-}"
-  "${PYTHON_BIN}" - "${STATUS_FILE}" "${phase}" "${message}" "${RUN_ID}" "${ROUTER_MODE}" "${MODE}" "${OFFLOAD_MODE}" "${extra}" <<'PY'
+  "${PYTHON_BIN}" - "${STATUS_FILE}" "${phase}" "${message}" "${RUN_ID}" "${ROUTER_MODE}" "${MODE}" "${OFFLOAD_MODE}" "${CLUSTER}" "${extra}" <<'PY'
 import json, sys, time
 from pathlib import Path
-path, phase, message, run_id, router, mode, offload_mode, extra = sys.argv[1:9]
+path, phase, message, run_id, router, mode, offload_mode, cluster, extra = sys.argv[1:10]
 prev = {}
 p = Path(path)
 if p.exists():
@@ -142,6 +154,7 @@ data = {
     **prev,
     "run_id": run_id,
     "mode": mode,
+    "cluster": cluster,
     "router_mode": router,
     "offload_mode": offload_mode,
     "phase": phase,
@@ -216,6 +229,13 @@ export TOKEN_USAGE_DIR="${LOG_DIR}/adapter_stats"
 [[ -v SGLANG_PYTHON ]] && export SGLANG_PYTHON
 
 ADAPTER_LOG="${LOG_DIR}/adapter_api.log"
+if [[ "${CLUSTER}" == "shanghai" ]]; then
+  export DOCKER_HOST="${DOCKER_HOST:-unix:///tmp/docker-rt.sock}"
+  echo "[run] CLUSTER=shanghai DOCKER_HOST=${DOCKER_HOST}"
+else
+  echo "[run] CLUSTER=us"
+fi
+
 echo "[run] MODE=${MODE} RUN_ID=${RUN_ID} RESUME=${RESUME} SLM_BACKEND=${SLM_BACKEND}"
 echo "[run] RUN_DIR=${RUN_DIR}"
 if [[ "${RESUME}" == "1" || "${RESUME}" == "true" || "${RESUME}" == "yes" ]]; then
@@ -306,6 +326,21 @@ PROGRESS_PID=$!
 set +e
 case "${MODE}" in
   swe|swe_20filter)
+    if [[ "${CLUSTER}" == "shanghai" ]]; then
+      export MSWEA_NO_DOCKER_WRAPPER=1
+      unset MSWEA_DOCKER_EXECUTABLE
+      export SWEBENCH_DOCKER_IMAGE_PREFIX="${SWEBENCH_DOCKER_IMAGE_PREFIX:-pyromind-registry-vpc.cn-shanghai.cr.aliyuncs.com/pyromind}"
+      export SWEBENCH_DOCKER_NAMESPACE="${SWEBENCH_DOCKER_NAMESPACE:-${SWEBENCH_DOCKER_IMAGE_PREFIX}}"
+      export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
+      export HF_DATASETS_OFFLINE="${HF_DATASETS_OFFLINE:-1}"
+      export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
+      export LITELLM_LOCAL_MODEL_COST_MAP="${LITELLM_LOCAL_MODEL_COST_MAP:-True}"
+      export SWEBENCH_GITHUB_CACHE="${SWEBENCH_GITHUB_CACHE:-${PYRODASH_ROOT}/evaluation/evaluation_code/swe-bench/cache/github_raw}"
+      export SWEBENCH_GITHUB_RAW_MIRRORS="${SWEBENCH_GITHUB_RAW_MIRRORS:-https://ghproxy.net/}"
+      export SWEBENCH_GITHUB_RAW_TIMEOUT="${SWEBENCH_GITHUB_RAW_TIMEOUT:-30}"
+      mkdir -p "${SWEBENCH_GITHUB_CACHE}"
+      echo "[run] shanghai SWE prefix=${SWEBENCH_DOCKER_IMAGE_PREFIX} harness=${HARNESS_PYTHON}"
+    fi
     EVAL_OUTPUT_DIR="${EVAL_OUT}" \
     INSTANCE_FILTER="${INSTANCE_FILTER}" \
     WORKERS="${WORKERS}" \

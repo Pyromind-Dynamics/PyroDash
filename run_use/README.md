@@ -9,6 +9,8 @@
 | `deepswe` | DeepSWE 1.1（Pier） |
 | `terminal` | Terminal-Bench（Harbor） |
 
+集群：`CLUSTER=us`（默认，美区镜像与本机 Docker）或 `CLUSTER=shanghai`（阿里云 SWE-bench 镜像、docker-rt、离线 HF / GitHub raw 镜像）。页面上的「集群」下拉传同一个变量。LLM 地址、端口、上下文长度不跟集群绑定。
+
 流程：起 offload adapter → 跑对应 `evaluation_code/*/eval.sh` → 结果进 `output/<RUN_ID>/<MODE>/`。
 
 ROUTER：`tag` / `entropy`（需 LLM）或 **`slm_only`**（仅小模型，不注入 offload 提示词）。
@@ -26,6 +28,11 @@ cd /path/to/PyroDash
 
 # 20filter（或 bash run_use/run_sh/run_swe_20filter.sh）
 MODE=swe_20filter MODEL_PATH=/path/to/ckpt \
+LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+  bash run_use/run_sh/run_coding.sh
+
+# 上海集群（美区默认不用加）
+CLUSTER=shanghai MODE=swe_20filter MODEL_PATH=/path/to/ckpt \
 LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash run_use/run_sh/run_coding.sh
 

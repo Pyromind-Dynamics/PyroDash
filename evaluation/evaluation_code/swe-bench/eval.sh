@@ -13,6 +13,11 @@ CONFIG_DIR="${SCRIPT_DIR}/config"
 PYRODASH_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 # shellcheck disable=SC1091
 source "${PYRODASH_ROOT}/env_paths.sh"
+CLUSTER="${CLUSTER:-us}"
+case "${CLUSTER}" in
+  us|shanghai) ;;
+  *) echo "[eval ERROR] CLUSTER must be us|shanghai (got ${CLUSTER})" >&2; exit 1 ;;
+esac
 
 # If EVAL_OUTPUT_DIR is set, redirect runs/verified under it (for run_use pipelines).
 if [[ -n "${EVAL_OUTPUT_DIR:-}" ]]; then
@@ -36,6 +41,13 @@ RUN_ID="${RUN_ID:-swebench_offload_pred}"
 INSTANCE_FILTER="${INSTANCE_FILTER:-}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
 # Harness: base conda (swebench 5.x). Project .venv is for vLLM only.
+# Shanghai prefers eval_code only when HARNESS_PYTHON was not set and that env can import the harness packages.
+if [[ "${CLUSTER}" == "shanghai" && -z "${HARNESS_PYTHON:-}" && -x /workspace/.conda/envs/eval_code/bin/python ]]; then
+  if /workspace/.conda/envs/eval_code/bin/python -c "import docker, swebench" >/dev/null 2>&1; then
+    HARNESS_PYTHON=/workspace/.conda/envs/eval_code/bin/python
+    export HARNESS_PYTHON
+  fi
+fi
 pyrodash_resolve_harness_python || true
 echo "[eval] HARNESS_PYTHON=${HARNESS_PYTHON}"
 
@@ -61,7 +73,9 @@ Env overrides:
   DATASET_NAME         harness dataset (default: princeton-nlp/SWE-bench_Verified)
   RUN_ID               harness run id
   PYTHON_BIN           python for helper bits
-  HARNESS_PYTHON       python with swebench+docker (default: base conda via env_paths.sh)
+  HARNESS_PYTHON       python with swebench+docker (default: base conda via env_paths.sh;
+                       CLUSTER=shanghai prefers eval_code when unset and importable)
+  CLUSTER              us (default) | shanghai
 EOF
 }
 
@@ -119,20 +133,55 @@ if [[ -n "${INSTANCE_FILTER}" ]]; then
 fi
 
 ENV_TESTBED_YAML="${CONFIG_DIR}/env_testbed_path.yaml"
+echo "[eval] CLUSTER=${CLUSTER}"
 echo "[eval] mini-extra swebench → ${OUT_DIR}"
 echo "[eval] env overlay: ${ENV_TESTBED_YAML}"
-mini-extra swebench \
-  -c swebench.yaml \
-  -c "${MODEL_YAML}" \
-  -c "${ENV_TESTBED_YAML}" \
-  -c "model.litellm_model_registry=${REGISTRY_ABS}" \
-  -c "environment.pull_timeout=7200" \
-  -c "agent.step_limit=${STEP_LIMIT}" \
-  --subset "${SUBSET}" \
-  --split "${SPLIT}" \
-  "${FILTER_ARGS[@]}" \
-  -w "${WORKERS}" \
+
+MINI_ARGS=(
+  -c swebench.yaml
+  -c "${MODEL_YAML}"
+  -c "${ENV_TESTBED_YAML}"
+  -c "model.litellm_model_registry=${REGISTRY_ABS}"
+  -c "environment.pull_timeout=7200"
+  -c "agent.step_limit=${STEP_LIMIT}"
+  --subset "${SUBSET}"
+  --split "${SPLIT}"
+  "${FILTER_ARGS[@]}"
+  -w "${WORKERS}"
   -o "${OUT_DIR}"
+)
+
+if [[ "${CLUSTER}" == "shanghai" ]]; then
+  # Aliyun images + docker-rt. Keep bash -lc (do not install docker_rt_testbed_exec.sh).
+  export DOCKER_HOST="${DOCKER_HOST:-unix:///tmp/docker-rt.sock}"
+  export MSWEA_NO_DOCKER_WRAPPER=1
+  unset MSWEA_DOCKER_EXECUTABLE
+  export SWEBENCH_DOCKER_IMAGE_PREFIX="${SWEBENCH_DOCKER_IMAGE_PREFIX:-pyromind-registry-vpc.cn-shanghai.cr.aliyuncs.com/pyromind}"
+  export SWEBENCH_DOCKER_NAMESPACE="${SWEBENCH_DOCKER_NAMESPACE:-${SWEBENCH_DOCKER_IMAGE_PREFIX}}"
+  export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
+  export HF_DATASETS_OFFLINE="${HF_DATASETS_OFFLINE:-1}"
+  export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
+  export LITELLM_LOCAL_MODEL_COST_MAP="${LITELLM_LOCAL_MODEL_COST_MAP:-True}"
+  export SWEBENCH_GITHUB_CACHE="${SWEBENCH_GITHUB_CACHE:-${SCRIPT_DIR}/cache/github_raw}"
+  export SWEBENCH_GITHUB_RAW_MIRRORS="${SWEBENCH_GITHUB_RAW_MIRRORS:-https://ghproxy.net/}"
+  export SWEBENCH_GITHUB_RAW_TIMEOUT="${SWEBENCH_GITHUB_RAW_TIMEOUT:-30}"
+  mkdir -p "${SWEBENCH_GITHUB_CACHE}"
+  echo "[eval] shanghai image prefix=${SWEBENCH_DOCKER_IMAGE_PREFIX}"
+  echo "[eval] DOCKER_HOST=${DOCKER_HOST} MSWEA_DOCKER_EXECUTABLE=${MSWEA_DOCKER_EXECUTABLE:-<unset>}"
+
+  MINI_EXTRA_BIN="$(command -v mini-extra || true)"
+  MINI_EXTRA_PYTHON=""
+  if [[ -n "${MINI_EXTRA_BIN}" && -f "${MINI_EXTRA_BIN}" ]]; then
+    _shebang="$(head -n 1 "${MINI_EXTRA_BIN}")"
+    if [[ "${_shebang}" == "#!"* ]]; then
+      MINI_EXTRA_PYTHON="${_shebang#\#!}"
+    fi
+  fi
+  MINI_EXTRA_PYTHON="${MINI_EXTRA_PYTHON:-${PYTHON_BIN}}"
+  "${MINI_EXTRA_PYTHON}" "${SCRIPT_DIR}/mini_extra_shanghai.py" "${MINI_ARGS[@]}"
+else
+  mini-extra swebench "${MINI_ARGS[@]}"
+fi
 
 PREDS="${OUT_DIR}/preds.json"
 [[ -f "${PREDS}" ]] || { echo "[eval ERROR] missing ${PREDS}" >&2; exit 1; }

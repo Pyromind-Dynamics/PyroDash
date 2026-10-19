@@ -46,6 +46,7 @@ async def no_cache_ui_assets(request, call_next):
 
 class StartRunRequest(BaseModel):
     mode: str = Field(default="swe_20filter")
+    cluster: str = Field(default="us")
     router_mode: str = Field(default="tag")
     model_path: str = ""
     slm_base_url: str = ""
@@ -341,6 +342,9 @@ def start_run(body: StartRunRequest) -> JSONResponse:
             status_code=400,
             detail=f"mode must be one of {', '.join(SUPPORTED_MODES)}",
         )
+    cluster = (body.cluster or "us").strip().lower()
+    if cluster not in ("us", "shanghai"):
+        raise HTTPException(status_code=400, detail="cluster must be us or shanghai")
     if body.router_mode not in ("tag", "entropy", "slm_only"):
         raise HTTPException(
             status_code=400, detail="router_mode must be tag, entropy, or slm_only"
@@ -410,6 +414,7 @@ def start_run(body: StartRunRequest) -> JSONResponse:
     env.update(
         {
             "MODE": body.mode,
+            "CLUSTER": cluster,
             "RUN_ID": run_id,
             "ROUTER_MODE": body.router_mode,
             "OFFLOAD_MODE": body.offload_mode,
@@ -464,7 +469,9 @@ def start_run(body: StartRunRequest) -> JSONResponse:
     web_log = run_dir / "logs" / "web_launch.log"
     with web_log.open("a" if resumed else "w") as logf:
         action = "resuming" if resumed else "starting"
-        logf.write(f"{action} {RUN_SH} mode={body.mode} run_id={run_id}\n")
+        logf.write(
+            f"{action} {RUN_SH} mode={body.mode} cluster={cluster} run_id={run_id}\n"
+        )
         logf.flush()
         proc = subprocess.Popen(
             ["bash", str(RUN_SH)],
@@ -479,6 +486,7 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         **prev_status,
         "run_id": run_id,
         "mode": body.mode,
+        "cluster": cluster,
         "router_mode": body.router_mode,
         "offload_mode": body.offload_mode,
         "phase": "starting_adapter",
