@@ -228,7 +228,9 @@ def _compute_progress(run_dir: Path, status: dict[str, Any]) -> dict[str, Any]:
 
 
 def _parse_harness_summary(eval_dir: Path) -> dict[str, Any]:
-    verified = eval_dir / "verified"
+    # Delegate to metrics so verified/ + stray CWD reports + empty-preds → 0/N stay in sync.
+    from metrics import _iter_harness_report_candidates, _harness_summary_from_report, _resolved_from_preds
+
     preds = eval_dir / "runs" / "preds.json"
     summary: dict[str, Any] = {
         "preds_exists": preds.is_file(),
@@ -237,33 +239,36 @@ def _parse_harness_summary(eval_dir: Path) -> dict[str, Any]:
         "total": None,
         "report_files": [],
     }
-    if not verified.is_dir():
-        return summary
-
-    reports = sorted(verified.rglob("*.json"))
-    summary["report_files"] = [str(p.relative_to(eval_dir)) for p in reports[:50]]
+    run_dir = eval_dir.parent
+    reports = _iter_harness_report_candidates(eval_dir, run_dir=run_dir)
+    summary["report_files"] = []
+    for report in reports[:50]:
+        try:
+            summary["report_files"].append(str(report.relative_to(eval_dir)))
+        except ValueError:
+            summary["report_files"].append(str(report))
 
     for report in reports:
+        data = None
         try:
             data = json.loads(report.read_text())
         except Exception:
             continue
-        if isinstance(data, dict):
-            for key in ("resolved_instances", "resolved", "num_resolved"):
-                if key in data and isinstance(data[key], (int, float)):
-                    summary["resolved"] = int(data[key])
-            for key in ("total_instances", "total", "num_instances", "submitted_instances"):
-                if key in data and isinstance(data[key], (int, float)):
-                    summary["total"] = int(data[key])
-            if summary["resolved"] is not None:
-                summary["primary_report"] = str(report.relative_to(eval_dir))
-                break
-            if data and all(isinstance(v, dict) for v in data.values()):
-                resolved = sum(1 for v in data.values() if v.get("resolved") is True)
-                summary["resolved"] = resolved
-                summary["total"] = len(data)
-                summary["primary_report"] = str(report.relative_to(eval_dir))
-                break
+        if not isinstance(data, dict):
+            continue
+        parsed = _harness_summary_from_report(data, report, root=eval_dir)
+        if parsed.get("resolved") is not None:
+            summary["resolved"] = parsed["resolved"]
+            summary["total"] = parsed.get("total")
+            summary["primary_report"] = parsed.get("primary_report")
+            break
+
+    if summary["resolved"] is None:
+        pred_resolved, pred_n = _resolved_from_preds(eval_dir)
+        if pred_resolved is not None:
+            summary["resolved"] = pred_resolved
+        if summary["total"] is None and pred_n is not None:
+            summary["total"] = pred_n
     return summary
 
 

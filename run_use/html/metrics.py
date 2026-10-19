@@ -187,30 +187,106 @@ def _load_adapter_totals(stats_dir: Path) -> dict[str, Any]:
     return out
 
 
-def _parse_harness(eval_dir: Path) -> dict[str, Any]:
-    verified = eval_dir / "verified"
+def _harness_summary_from_report(data: dict[str, Any], report: Path, *, root: Path) -> dict[str, Any]:
+    """Extract resolved/submitted totals from a swebench run report JSON."""
     summary: dict[str, Any] = {"resolved": None, "total": None, "primary_report": None}
-    if not verified.is_dir():
+    for key in ("resolved_instances", "resolved", "num_resolved"):
+        if key in data and isinstance(data[key], (int, float)):
+            summary["resolved"] = int(data[key])
+            break
+    # Prefer submitted (what we actually asked to grade), not full dataset size (500).
+    for key in ("submitted_instances", "total_instances", "total", "num_instances"):
+        if key in data and isinstance(data[key], (int, float)):
+            summary["total"] = int(data[key])
+            if key == "submitted_instances":
+                break
+    if summary["resolved"] is not None:
+        try:
+            summary["primary_report"] = str(report.relative_to(root))
+        except ValueError:
+            summary["primary_report"] = str(report)
         return summary
-    for report in sorted(verified.rglob("*.json")):
+    if data and all(isinstance(v, dict) for v in data.values()):
+        summary["resolved"] = sum(1 for v in data.values() if v.get("resolved") is True)
+        summary["total"] = len(data)
+        try:
+            summary["primary_report"] = str(report.relative_to(root))
+        except ValueError:
+            summary["primary_report"] = str(report)
+    return summary
+
+
+def _iter_harness_report_candidates(eval_dir: Path, run_dir: Optional[Path] = None) -> list[Path]:
+    """Locate swebench harness reports (verified/ or stray CWD dumps)."""
+    seen: set[Path] = set()
+    out: list[Path] = []
+
+    def _add(p: Path) -> None:
+        try:
+            key = p.resolve()
+        except Exception:
+            key = p
+        if key in seen or not p.is_file():
+            return
+        seen.add(key)
+        out.append(p)
+
+    verified = eval_dir / "verified"
+    if verified.is_dir():
+        for report in sorted(verified.rglob("*.json")):
+            _add(report)
+    for report in sorted(eval_dir.glob("*.json")):
+        _add(report)
+
+    # Older swebench ignores --report_dir and writes <model>.<run_id>.json to CWD
+    # (run_use/) or next to the run. Prefer files that look like harness summaries.
+    search_roots: list[Path] = []
+    if run_dir is not None:
+        search_roots.extend([run_dir, run_dir.parent])
+    search_roots.append(eval_dir.parent)
+    for root in search_roots:
+        if not root.is_dir():
+            continue
+        for report in sorted(root.glob("*.json")):
+            data = _read_json(report)
+            if isinstance(data, dict) and (
+                "resolved_instances" in data or "empty_patch_instances" in data
+            ):
+                _add(report)
+    return out
+
+
+def _parse_harness(eval_dir: Path, *, run_dir: Optional[Path] = None) -> dict[str, Any]:
+    summary: dict[str, Any] = {"resolved": None, "total": None, "primary_report": None}
+    for report in _iter_harness_report_candidates(eval_dir, run_dir=run_dir):
         data = _read_json(report)
         if not isinstance(data, dict):
             continue
-        for key in ("resolved_instances", "resolved", "num_resolved"):
-            if key in data and isinstance(data[key], (int, float)):
-                summary["resolved"] = int(data[key])
-        for key in ("total_instances", "total", "num_instances"):
-            if key in data and isinstance(data[key], (int, float)):
-                summary["total"] = int(data[key])
-        if summary["resolved"] is not None:
-            summary["primary_report"] = str(report.relative_to(eval_dir))
-            return summary
-        if data and all(isinstance(v, dict) for v in data.values()):
-            summary["resolved"] = sum(1 for v in data.values() if v.get("resolved") is True)
-            summary["total"] = len(data)
-            summary["primary_report"] = str(report.relative_to(eval_dir))
-            return summary
+        parsed = _harness_summary_from_report(data, report, root=eval_dir)
+        if parsed.get("resolved") is not None:
+            return parsed
     return summary
+
+
+def _resolved_from_preds(eval_dir: Path) -> tuple[Optional[int], Optional[int]]:
+    """If preds exist and all patches are empty, score is 0/N (harness skipped verify)."""
+    preds_path = eval_dir / "runs" / "preds.json"
+    data = _read_json(preds_path)
+    if not isinstance(data, dict) or not data:
+        return None, None
+    n = len(data)
+    nonempty = 0
+    for v in data.values():
+        if not isinstance(v, dict):
+            continue
+        patch = v.get("model_patch")
+        if patch is None:
+            patch = v.get("model_patch_text")
+        if isinstance(patch, str) and patch.strip():
+            nonempty += 1
+    if nonempty == 0:
+        return 0, n
+    return None, n
 
 
 def _parse_harbor(eval_dir: Path) -> dict[str, Any]:
@@ -276,13 +352,25 @@ def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> d
 
     if eval_dir is not None:
         if mode in ("swe", "swe_20filter") or (eval_dir / "verified").is_dir():
-            h = _parse_harness(eval_dir)
+            h = _parse_harness(eval_dir, run_dir=run_dir)
             if h.get("resolved") is not None:
                 resolved = int(h["resolved"])
-            if h.get("total") is not None:
-                total = int(h["total"])
-            elif expected is not None:
+            # Prefer mode expected (20) / submitted over full dataset size (500).
+            if expected is not None:
                 total = expected
+            elif h.get("total") is not None:
+                total = int(h["total"])
+            # All-empty preds ⇒ harness skips verify; still show 0/N, not "—".
+            if resolved is None:
+                pred_resolved, pred_n = _resolved_from_preds(eval_dir)
+                if pred_resolved is not None:
+                    resolved = pred_resolved
+                if total is None and pred_n is not None:
+                    total = pred_n
+            # Finished SWE run with known N but no report yet: treat as 0 resolved
+            # only when preds are present and all empty (already handled) or report
+            # says 0. If report missing but preds have patches and phase done,
+            # leave as "—" until verify lands.
         if mode in ("terminal", "deepswe") or resolved is None:
             job = _parse_harbor(eval_dir)
             if job.get("reward_mean") is not None:
@@ -313,6 +401,7 @@ def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> d
         call_denom = denom if denom else 0
         call_rate = f"{with_off}/{call_denom}" if call_denom else f"{with_off}/?"
     else:
+        # Explicit 0 is a valid score (all wrong / empty patches) — never hide as "—".
         if resolved is not None and denom:
             score_str = f"{resolved}/{denom}"
         elif resolved is not None:

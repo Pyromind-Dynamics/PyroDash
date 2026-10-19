@@ -73,10 +73,25 @@ RUN_ID="${RUN_ID:-${MODE}_$(date '+%Y%m%d_%H%M%S')}"
 PYTHON_BIN="${PYTHON_BIN:-${VENV_DIR}/bin/python}"
 [[ -x "${PYTHON_BIN}" ]] || PYTHON_BIN="$(command -v python3 || command -v python)"
 export PYTHON_BIN
-# SWE harness needs swebench + docker Python SDK (venv usually only has vLLM)
-HARNESS_PYTHON="${HARNESS_PYTHON:-/workspace/.conda/envs/gui-360/bin/python}"
-[[ -x "${HARNESS_PYTHON}" ]] || HARNESS_PYTHON="${PYTHON_BIN}"
+# Split envs on purpose:
+#   - vLLM / adapter / pipeline → project .venv (PYTHON_BIN / VLLM_BIN above)
+#   - SWE harness verify → base conda (has swebench+docker; .venv does not)
+# Do not use gui-360.
+if [[ -z "${HARNESS_PYTHON:-}" ]]; then
+  for cand in \
+    /workspace/.conda/bin/python \
+    /workspace/.conda/bin/python3
+  do
+    [[ -x "${cand}" ]] || continue
+    if "${cand}" -c "import docker, swebench" >/dev/null 2>&1; then
+      HARNESS_PYTHON="${cand}"
+      break
+    fi
+  done
+fi
+HARNESS_PYTHON="${HARNESS_PYTHON:-${PYTHON_BIN}}"
 export HARNESS_PYTHON
+echo "[run] PYTHON_BIN=${PYTHON_BIN} VLLM_BIN=${VLLM_BIN:-} HARNESS_PYTHON=${HARNESS_PYTHON}"
 
 # swe_20filter only — ignored for MODE=swe
 SWE20_FILTER="astropy__astropy-14182|astropy__astropy-14508|django__django-10999|django__django-12262|django__django-13023|django__django-14122|django__django-15268|django__django-16136|django__django-16631|matplotlib__matplotlib-26208|pydata__xarray-3677|pydata__xarray-4094|pylint-dev__pylint-6528|pytest-dev__pytest-6202|scikit-learn__scikit-learn-14894|sphinx-doc__sphinx-10449|sphinx-doc__sphinx-9591|sympy__sympy-13551|sympy__sympy-14531|sympy__sympy-17139"

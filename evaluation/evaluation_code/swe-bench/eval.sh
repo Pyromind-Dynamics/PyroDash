@@ -33,13 +33,19 @@ RUN_ID="${RUN_ID:-swebench_offload_pred}"
 INSTANCE_FILTER="${INSTANCE_FILTER:-}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
 # Harness needs the `docker` + `swebench` Python packages (not the same as Docker CLI).
-# Prefer a dedicated HARNESS_PYTHON; fall back to common conda env then PYTHON_BIN.
+# Use base conda only (swebench 5.x). Project .venv is for vLLM; do not use gui-360.
 if [[ -z "${HARNESS_PYTHON:-}" ]]; then
-  if [[ -x /workspace/.conda/envs/gui-360/bin/python ]]; then
-    HARNESS_PYTHON=/workspace/.conda/envs/gui-360/bin/python
-  else
-    HARNESS_PYTHON="${PYTHON_BIN}"
-  fi
+  for cand in \
+    /workspace/.conda/bin/python \
+    /workspace/.conda/bin/python3
+  do
+    [[ -x "${cand}" ]] || continue
+    if "${cand}" -c "import docker, swebench" >/dev/null 2>&1; then
+      HARNESS_PYTHON="${cand}"
+      break
+    fi
+  done
+  HARNESS_PYTHON="${HARNESS_PYTHON:-${PYTHON_BIN}}"
 fi
 
 usage() {
@@ -65,7 +71,7 @@ Env overrides:
   RUN_ID               harness run id
   PYTHON_BIN           python for helper bits
   HARNESS_PYTHON       python with swebench+docker packages
-                       (default: gui-360 env if present, else PYTHON_BIN)
+                       (default: /workspace/.conda/bin/python, else PYTHON_BIN)
 EOF
 }
 
@@ -146,9 +152,11 @@ if ! "${HARNESS_PYTHON}" -c "import docker, swebench" >/dev/null 2>&1; then
   echo "[eval ERROR] HARNESS_PYTHON missing packages: need 'docker' and 'swebench'" >&2
   echo "  tried: ${HARNESS_PYTHON}" >&2
   echo "  Note: Docker CLI can exist while the Python 'docker' SDK is missing." >&2
-  echo "  Fix:  pip install docker swebench   OR set HARNESS_PYTHON to gui-360 python" >&2
+  echo "  Fix:  pip install docker swebench   OR set HARNESS_PYTHON=/workspace/.conda/bin/python" >&2
   exit 1
 fi
+# Some swebench builds ignore --report_dir and write <model>.<run_id>.json to CWD.
+# Always collect the report into EVAL_DIR afterward so metrics can find it.
 "${HARNESS_PYTHON}" "${SCRIPT_DIR}/run_harness.py" \
   --dataset_name "${DATASET_NAME}" \
   --predictions_path "${PREDS}" \
@@ -157,6 +165,27 @@ fi
   --report_dir "${EVAL_DIR}" \
   --cache_level instance \
   --clean False
+
+mkdir -p "${EVAL_DIR}"
+REPORT_GLOB="*.${RUN_ID}.json"
+# Prefer CWD (common when report_dir is ignored), then report_dir itself.
+for cand in \
+  "./${REPORT_GLOB}" \
+  "${EVAL_DIR}/${REPORT_GLOB}" \
+  "${OUT_DIR}/${REPORT_GLOB}"
+do
+  # shellcheck disable=SC2086
+  for f in ${cand}; do
+    [[ -f "${f}" ]] || continue
+    base="$(basename "${f}")"
+    if [[ "${f}" != "${EVAL_DIR}/${base}" ]]; then
+      cp -f "${f}" "${EVAL_DIR}/${base}"
+      echo "[eval] collected harness report → ${EVAL_DIR}/${base}"
+    else
+      echo "[eval] harness report → ${f}"
+    fi
+  done
+done
 
 echo "[eval] done"
 echo "[eval] preds : ${PREDS}"
