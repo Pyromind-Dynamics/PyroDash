@@ -194,12 +194,21 @@ def _harness_summary_from_report(data: dict[str, Any], report: Path, *, root: Pa
         if key in data and isinstance(data[key], (int, float)):
             summary["resolved"] = int(data[key])
             break
-    # Prefer submitted (what we actually asked to grade), not full dataset size (500).
-    for key in ("submitted_instances", "total_instances", "total", "num_instances"):
-        if key in data and isinstance(data[key], (int, float)):
+    # Denominator = instances we actually ran/submitted — NEVER full-dataset
+    # total_instances (500 for Verified) which swebench always puts in the report.
+    for key in ("submitted_instances", "submitted"):
+        if key in data and isinstance(data[key], (int, float)) and int(data[key]) > 0:
             summary["total"] = int(data[key])
-            if key == "submitted_instances":
-                break
+            break
+    if summary["total"] is None:
+        empty_n = data.get("empty_patch_instances")
+        if isinstance(empty_n, (int, float)) and int(empty_n) > 0:
+            # Empty-patch-only runs still submitted N instances.
+            submitted_ids = data.get("submitted_ids") or data.get("empty_patch_ids")
+            if isinstance(submitted_ids, list) and submitted_ids:
+                summary["total"] = len(submitted_ids)
+            else:
+                summary["total"] = int(empty_n)
     if summary["resolved"] is not None:
         try:
             summary["primary_report"] = str(report.relative_to(root))
@@ -355,22 +364,17 @@ def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> d
             h = _parse_harness(eval_dir, run_dir=run_dir)
             if h.get("resolved") is not None:
                 resolved = int(h["resolved"])
-            # Prefer mode expected (20) / submitted over full dataset size (500).
-            if expected is not None:
-                total = expected
+            # Actual run size: preds count > harness submitted > mode expected.
+            # Never use report total_instances (full SWE-bench Verified = 500).
+            pred_resolved, pred_n = _resolved_from_preds(eval_dir)
+            if pred_n is not None:
+                total = pred_n
             elif h.get("total") is not None:
                 total = int(h["total"])
-            # All-empty preds ⇒ harness skips verify; still show 0/N, not "—".
-            if resolved is None:
-                pred_resolved, pred_n = _resolved_from_preds(eval_dir)
-                if pred_resolved is not None:
-                    resolved = pred_resolved
-                if total is None and pred_n is not None:
-                    total = pred_n
-            # Finished SWE run with known N but no report yet: treat as 0 resolved
-            # only when preds are present and all empty (already handled) or report
-            # says 0. If report missing but preds have patches and phase done,
-            # leave as "—" until verify lands.
+            elif expected is not None:
+                total = expected
+            if resolved is None and pred_resolved is not None:
+                resolved = pred_resolved
         if mode in ("terminal", "deepswe") or resolved is None:
             job = _parse_harbor(eval_dir)
             if job.get("reward_mean") is not None:

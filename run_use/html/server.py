@@ -401,6 +401,11 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         raise HTTPException(status_code=400, detail="slm_backend must be vllm or sglang")
     # Prefer slm_port; fall back to legacy vllm_port when client only sends that.
     slm_port = int(body.slm_port or body.vllm_port or 8007)
+    # Match env_paths.sh: .venv for vLLM/adapter; base conda for SWE harness.
+    venv_dir = Path(os.environ.get("VENV_DIR") or "/workspace/work/mjy/.venv")
+    harness_py = Path(os.environ.get("HARNESS_PYTHON") or "/workspace/.conda/bin/python")
+    if not harness_py.is_file():
+        harness_py = Path("/workspace/.conda/bin/python3")
     env = os.environ.copy()
     env.update(
         {
@@ -425,6 +430,10 @@ def start_run(body: StartRunRequest) -> JSONResponse:
             "DEEPSWE_TASKS": body.deepswe_tasks,
             "TB_DATASET": body.tb_dataset,
             "RESUME": "1" if resumed else "0",
+            "VENV_DIR": str(venv_dir),
+            "PYTHON_BIN": str(venv_dir / "bin" / "python"),
+            "VLLM_BIN": str(venv_dir / "bin" / "vllm"),
+            "HARNESS_PYTHON": str(harness_py),
         }
     )
     # Context length / any other engine flags belong inside EXTRA_ARGS (--max-model-len / --context-length).

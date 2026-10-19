@@ -79,9 +79,13 @@ Entropy-only: `ENTROPY_TOP_K`, `ENTROPY_THRESHOLD`, `LLM_REASONING_EFFORT` (vLLM
 
 Optional: `PYTHON_BIN`, `VLLM_BIN`, `SGLANG_BIN` / `SGLANG_PYTHON`, `TOKEN_USAGE_DIR` (extra token_usage mirror).
 
+Default Python/engine paths come from repo-root [`env_paths.sh`](../../env_paths.sh): project `.venv` for vLLM/adapter (not gui-360).
+
 ## Dependencies
 
 ```bash
+# prefer project venv
+source /workspace/work/mjy/.venv/bin/activate
 pip install -r requirements.txt
 # plus a working `vllm` on PATH (or set VLLM_BIN); for SGLang: pip install sglang
 ```

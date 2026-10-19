@@ -53,7 +53,14 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash run_use/run_sh/run_coding.sh
 ```
 
-脚本会自动 `source /workspace/work/mjy/.venv`（可用 `VENV_DIR` 覆盖）。
+### Python 环境（不要用 gui-360）
+
+| 用途 | 路径 | 覆盖变量 |
+|------|------|----------|
+| vLLM / adapter / pipeline | 项目 `.venv`（`/workspace/work/mjy/.venv`） | `VENV_DIR` / `PYTHON_BIN` / `VLLM_BIN` |
+| SWE harness（verified） | base conda（`/workspace/.conda/bin/python`） | `HARNESS_PYTHON` |
+
+统一逻辑见仓库根目录 [`env_paths.sh`](../env_paths.sh)。`run_coding.sh` 会自动激活 `.venv` 并解析 harness Python。
 
 ## 网页版
 

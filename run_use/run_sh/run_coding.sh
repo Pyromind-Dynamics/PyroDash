@@ -14,19 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUN_USE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PYRODASH_ROOT="$(cd "${RUN_USE_ROOT}/.." && pwd)"
 
-# Activate local venv (vLLM lives here). Override with VENV_DIR=...
-VENV_DIR="${VENV_DIR:-/workspace/work/mjy/.venv}"
-if [[ -f "${VENV_DIR}/bin/activate" ]]; then
-  # shellcheck disable=SC1091
-  source "${VENV_DIR}/bin/activate"
-  export PATH="${VENV_DIR}/bin:${PATH}"
-  export VIRTUAL_ENV="${VENV_DIR}"
-  export VLLM_BIN="${VLLM_BIN:-${VENV_DIR}/bin/vllm}"
-  export VLLM_CONDA_PREFIX="${VLLM_CONDA_PREFIX:-${VENV_DIR}}"
-  echo "[run] activated venv: ${VENV_DIR} (vllm=$(command -v vllm || echo missing))"
-else
-  echo "[run WARN] venv not found: ${VENV_DIR}" >&2
-fi
+# shellcheck disable=SC1091
+source "${PYRODASH_ROOT}/env_paths.sh"
+# vLLM / adapter / pipeline → project .venv
+pyrodash_activate_venv "${VENV_DIR:-${PYRODASH_VENV_DIR}}"
 
 # =========================
 # Edit this block (or export env vars before running)
@@ -70,27 +61,8 @@ DEEPSWE_TASKS="${DEEPSWE_TASKS:-/workspace/work/mjy/eval/deep-swe/tasks}"
 TB_DATASET="${TB_DATASET:-terminal-bench/terminal-bench-2-1}"
 
 RUN_ID="${RUN_ID:-${MODE}_$(date '+%Y%m%d_%H%M%S')}"
-PYTHON_BIN="${PYTHON_BIN:-${VENV_DIR}/bin/python}"
-[[ -x "${PYTHON_BIN}" ]] || PYTHON_BIN="$(command -v python3 || command -v python)"
-export PYTHON_BIN
-# Split envs on purpose:
-#   - vLLM / adapter / pipeline → project .venv (PYTHON_BIN / VLLM_BIN above)
-#   - SWE harness verify → base conda (has swebench+docker; .venv does not)
-# Do not use gui-360.
-if [[ -z "${HARNESS_PYTHON:-}" ]]; then
-  for cand in \
-    /workspace/.conda/bin/python \
-    /workspace/.conda/bin/python3
-  do
-    [[ -x "${cand}" ]] || continue
-    if "${cand}" -c "import docker, swebench" >/dev/null 2>&1; then
-      HARNESS_PYTHON="${cand}"
-      break
-    fi
-  done
-fi
-HARNESS_PYTHON="${HARNESS_PYTHON:-${PYTHON_BIN}}"
-export HARNESS_PYTHON
+# SWE harness verify → base conda (swebench + docker). Never gui-360 / .venv.
+pyrodash_resolve_harness_python || true
 echo "[run] PYTHON_BIN=${PYTHON_BIN} VLLM_BIN=${VLLM_BIN:-} HARNESS_PYTHON=${HARNESS_PYTHON}"
 
 # swe_20filter only — ignored for MODE=swe

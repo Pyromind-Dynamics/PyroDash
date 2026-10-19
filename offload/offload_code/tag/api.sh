@@ -8,6 +8,15 @@
 set -euo pipefail
 
 OFFLOAD_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYRODASH_ROOT="$(cd "${OFFLOAD_ROOT}/../../.." && pwd)"
+# Prefer project .venv for adapter / vLLM (same as run_use).
+# shellcheck disable=SC1091
+if [[ -f "${PYRODASH_ROOT}/env_paths.sh" ]]; then
+  source "${PYRODASH_ROOT}/env_paths.sh"
+  pyrodash_activate_venv "${VENV_DIR:-${PYRODASH_VENV_DIR}}"
+else
+  PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
+fi
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
 
 # =========================

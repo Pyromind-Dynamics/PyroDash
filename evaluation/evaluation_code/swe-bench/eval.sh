@@ -10,6 +10,9 @@ export MSWEA_MODEL_RETRY_STOP_AFTER_ATTEMPT="${MSWEA_MODEL_RETRY_STOP_AFTER_ATTE
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="${SCRIPT_DIR}/config"
+PYRODASH_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+# shellcheck disable=SC1091
+source "${PYRODASH_ROOT}/env_paths.sh"
 
 # If EVAL_OUTPUT_DIR is set, redirect runs/verified under it (for run_use pipelines).
 if [[ -n "${EVAL_OUTPUT_DIR:-}" ]]; then
@@ -32,21 +35,9 @@ DATASET_NAME="${DATASET_NAME:-princeton-nlp/SWE-bench_Verified}"
 RUN_ID="${RUN_ID:-swebench_offload_pred}"
 INSTANCE_FILTER="${INSTANCE_FILTER:-}"
 PYTHON_BIN="${PYTHON_BIN:-$(command -v python3 || command -v python)}"
-# Harness needs the `docker` + `swebench` Python packages (not the same as Docker CLI).
-# Use base conda only (swebench 5.x). Project .venv is for vLLM; do not use gui-360.
-if [[ -z "${HARNESS_PYTHON:-}" ]]; then
-  for cand in \
-    /workspace/.conda/bin/python \
-    /workspace/.conda/bin/python3
-  do
-    [[ -x "${cand}" ]] || continue
-    if "${cand}" -c "import docker, swebench" >/dev/null 2>&1; then
-      HARNESS_PYTHON="${cand}"
-      break
-    fi
-  done
-  HARNESS_PYTHON="${HARNESS_PYTHON:-${PYTHON_BIN}}"
-fi
+# Harness: base conda (swebench 5.x). Project .venv is for vLLM only.
+pyrodash_resolve_harness_python || true
+echo "[eval] HARNESS_PYTHON=${HARNESS_PYTHON}"
 
 usage() {
   cat <<EOF
@@ -70,8 +61,7 @@ Env overrides:
   DATASET_NAME         harness dataset (default: princeton-nlp/SWE-bench_Verified)
   RUN_ID               harness run id
   PYTHON_BIN           python for helper bits
-  HARNESS_PYTHON       python with swebench+docker packages
-                       (default: /workspace/.conda/bin/python, else PYTHON_BIN)
+  HARNESS_PYTHON       python with swebench+docker (default: base conda via env_paths.sh)
 EOF
 }
 

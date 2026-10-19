@@ -22,3 +22,8 @@ bash evaluation/evaluation_code/terminal-sh/eval.sh --port 18027
 ```
 
 Pier / Harbor agents run in containers — prefer a LAN host IP, not `127.0.0.1`.
+
+### Python envs
+
+- **Offload / vLLM**: project `.venv` (`/workspace/work/mjy/.venv`) via [`env_paths.sh`](../../env_paths.sh)
+- **SWE harness**: base conda (`/workspace/.conda/bin/python`) — not gui-360
