@@ -15,11 +15,13 @@
   let previewRunId = null;
   let previewCache = { path: "", text: "", trajData: null };
   let trajViewMode = "chat"; // chat | json
+  let leaderboardMode = "swe_20filter";
 
   function switchTab(name) {
     $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
     $$(".panel").forEach((p) => p.classList.toggle("active", p.id === `panel-${name}`));
-    document.querySelector(".page")?.classList.toggle("page-wide", name === "history");
+    const wide = name === "tables" || name === "files";
+    document.querySelector(".page")?.classList.toggle("page-wide", wide);
   }
 
   function syncModeFields() {
@@ -41,39 +43,98 @@
     });
   }
 
+  const ROUTER_HELP = {
+    tag:
+      "<strong>tag</strong>：小模型在思考中发出控制标记后，把后续推理交给大模型。" +
+      "需配置 LLM；配合下方 OFFLOAD_MODE 决定接力方式。",
+    entropy:
+      "<strong>entropy</strong>：根据思考 token 的熵判断难度；超过阈值则整段交给大模型重写。" +
+      "需配置 LLM；不使用 OFFLOAD_MODE。",
+    slm_only:
+      "<strong>slm_only</strong>：仅跑小模型，不调用大模型、不注入 offload 协议。" +
+      "用于下界基线；LLM / ADAPTER_PORT / OFFLOAD_MODE 均不显示。",
+  };
+  const OFFLOAD_HELP = {
+    handoff:
+      "<strong>handoff</strong>（常用）：保留小模型已生成内容，用 &lt;part_think&gt; 交给大模型从断点续写。",
+    rewrite:
+      "<strong>rewrite</strong>：丢弃小模型本轮输出，由大模型按原问题整段重新生成。",
+    keep:
+      "<strong>keep</strong>：保留小模型文本并让大模型续写，但不走 part_think 协议。",
+  };
+
+  function syncRouterHelp() {
+    const help = $("#router-help");
+    if (!help) return;
+    const router = $("#router-select")?.value || "tag";
+    const mode = $("#offload-mode-select")?.value || "handoff";
+    const parts = [ROUTER_HELP[router] || ""];
+    if (router === "tag") parts.push(OFFLOAD_HELP[mode] || "");
+    help.innerHTML = parts.filter(Boolean).join("<br>");
+  }
+
   function syncRouterFields() {
     const router = $("#router-select")?.value || "tag";
     const slmOnly = router === "slm_only";
+    const isTag = router === "tag";
+
     const fs = $("#llm-fieldset");
-    if (fs) fs.style.opacity = slmOnly ? "0.55" : "1";
+    if (fs) {
+      fs.hidden = slmOnly;
+      fs.style.opacity = "1";
+    }
+
+    const adapterLabel = $("#adapter-port-label");
+    if (adapterLabel) adapterLabel.hidden = slmOnly;
+
     const offloadLabel = $("#offload-mode-label");
     if (offloadLabel) {
-      offloadLabel.hidden = slmOnly;
-      offloadLabel.classList.toggle("is-slm-only-hidden", slmOnly);
-      offloadLabel.style.setProperty("display", slmOnly ? "none" : "", "important");
+      offloadLabel.hidden = slmOnly || !isTag;
+      offloadLabel.classList.toggle("is-slm-only-hidden", slmOnly || !isTag);
+      offloadLabel.style.setProperty(
+        "display",
+        slmOnly || !isTag ? "none" : "",
+        "important"
+      );
     }
     const offloadSelect = $("#offload-mode-select");
     if (offloadSelect) {
-      offloadSelect.disabled = slmOnly;
+      offloadSelect.disabled = slmOnly || !isTag;
       if (slmOnly) offloadSelect.value = "handoff";
     }
     ["llm-base-url", "llm-model", "llm-api-key"].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.required = !slmOnly;
-      el.placeholder = slmOnly ? "(slm_only: optional)" : el.placeholder;
     });
+    syncRouterHelp();
+  }
+
+  function syncSlmSource() {
+    const source =
+      document.querySelector('input[name="slm_source"]:checked')?.value || "local";
+    const local = $("#slm-local-fields");
+    const remote = $("#slm-remote-fields");
+    if (local) local.hidden = source !== "local";
+    if (remote) remote.hidden = source !== "remote";
   }
 
   $("#mode-select")?.addEventListener("change", syncModeFields);
   $("#router-select")?.addEventListener("change", syncRouterFields);
+  $("#offload-mode-select")?.addEventListener("change", syncRouterHelp);
+  $$('input[name="slm_source"]').forEach((el) => {
+    el.addEventListener("change", syncSlmSource);
+  });
   syncModeFields();
   syncRouterFields();
+  syncSlmSource();
 
   $$(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
-      switchTab(btn.dataset.tab);
-      if (btn.dataset.tab === "history") loadHistory();
+      const name = btn.dataset.tab;
+      switchTab(name);
+      if (name === "tables") loadLeaderboard(leaderboardMode);
+      if (name === "files") loadHistory();
     });
   });
 
@@ -86,8 +147,29 @@
   });
 
   $("#btn-refresh")?.addEventListener("click", loadHistory);
+  $("#btn-refresh-tables")?.addEventListener("click", () => loadLeaderboard(leaderboardMode));
+  $("#btn-sync-result")?.addEventListener("click", async () => {
+    if (!previewRunId) {
+      alert("先选择左侧一个 run");
+      return;
+    }
+    try {
+      const res = await fetch(
+        apiUrl(`/api/runs/${encodeURIComponent(previewRunId)}/sync_result`),
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "sync failed");
+      if (previewRunId) await showResults(previewRunId);
+    } catch (ex) {
+      alert(String(ex));
+    }
+  });
+  $$("#leaderboard-tabs .lb-tab").forEach((btn) => {
+    btn.addEventListener("click", () => loadLeaderboard(btn.dataset.mode));
+  });
   $("#btn-view-results")?.addEventListener("click", () => {
-    switchTab("history");
+    switchTab("files");
     loadHistory().then(() => {
       if (activeRunId) showResults(activeRunId);
     });
@@ -100,17 +182,24 @@
     const fd = new FormData(e.target);
     const nConcurrentRaw = (fd.get("n_concurrent") || "").toString().trim();
     const router = (fd.get("router_mode") || "tag").toString();
+    const slmSource =
+      (fd.get("slm_source") || "local").toString() === "remote" ? "remote" : "local";
+    const modelPath = slmSource === "local" ? (fd.get("model_path") || "").trim() : "";
+    const slmBaseUrl = slmSource === "remote" ? (fd.get("slm_base_url") || "").trim() : "";
+    const slmModel = slmSource === "remote" ? (fd.get("slm_model") || "").trim() : "";
+    const slmApiKey =
+      slmSource === "remote" ? (fd.get("slm_api_key") || "dummy").trim() : "dummy";
     const body = {
       mode: (fd.get("mode") || "swe_20filter").toString(),
       router_mode: router,
       offload_mode: (fd.get("offload_mode") || "handoff").toString(),
-      model_path: (fd.get("model_path") || "").trim(),
-      slm_base_url: (fd.get("slm_base_url") || "").trim(),
-      slm_model: (fd.get("slm_model") || "").trim(),
-      slm_api_key: (fd.get("slm_api_key") || "dummy").trim(),
-      llm_base_url: (fd.get("llm_base_url") || "").trim(),
-      llm_model: (fd.get("llm_model") || "").trim(),
-      llm_api_key: (fd.get("llm_api_key") || "").trim(),
+      model_path: modelPath,
+      slm_base_url: slmBaseUrl,
+      slm_model: slmModel,
+      slm_api_key: slmApiKey,
+      llm_base_url: router === "slm_only" ? "" : (fd.get("llm_base_url") || "").trim(),
+      llm_model: router === "slm_only" ? "" : (fd.get("llm_model") || "").trim(),
+      llm_api_key: router === "slm_only" ? "" : (fd.get("llm_api_key") || "").trim(),
       adapter_port: Number(fd.get("adapter_port") || 18027),
       vllm_port: Number(fd.get("vllm_port") || 8007),
       workers: Number(fd.get("workers") || 4),
@@ -122,6 +211,18 @@
       cuda_visible_devices: (fd.get("cuda_visible_devices") || "0").trim(),
       run_id: (fd.get("run_id") || "").trim(),
     };
+
+    if (slmSource === "local") {
+      if (!body.model_path) {
+        err.textContent = "请填写 MODEL_PATH（本地权重目录）";
+        err.hidden = false;
+        return;
+      }
+    } else if (!body.slm_base_url || !body.slm_model) {
+      err.textContent = "远程 SLM 需要填写 SLM_BASE_URL 与 SLM_MODEL";
+      err.hidden = false;
+      return;
+    }
 
     if (router !== "slm_only") {
       if (!body.llm_base_url || !body.llm_api_key || !body.llm_model) {
@@ -229,6 +330,59 @@
     }
   }
 
+  async function loadLeaderboard(mode) {
+    if (mode) leaderboardMode = mode;
+    $$("#leaderboard-tabs .lb-tab").forEach((b) => {
+      b.classList.toggle("active", b.dataset.mode === leaderboardMode);
+    });
+    const thead = $("#leaderboard-table thead");
+    const tbody = $("#leaderboard-table tbody");
+    const empty = $("#leaderboard-empty");
+    if (!thead || !tbody) return;
+    thead.innerHTML = "";
+    tbody.innerHTML = `<tr><td class="muted">加载中…</td></tr>`;
+    if (empty) empty.hidden = true;
+    try {
+      const res = await fetch(
+        apiUrl(`/api/leaderboard?mode=${encodeURIComponent(leaderboardMode)}`)
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "leaderboard failed");
+      const cols = data.columns || [];
+      const rows = data.rows || [];
+      if (!cols.length) {
+        tbody.innerHTML = "";
+        if (empty) {
+          empty.hidden = false;
+          empty.textContent = data.error || "该 mode 暂无行";
+        }
+        return;
+      }
+      thead.innerHTML = `<tr>${cols.map((c) => `<th>${escapeHtml(c)}</th>`).join("")}</tr>`;
+      if (!rows.length) {
+        tbody.innerHTML = "";
+        if (empty) {
+          empty.hidden = false;
+          empty.textContent = "该 mode 暂无行";
+        }
+        return;
+      }
+      tbody.innerHTML = rows
+        .map((r) => {
+          const highlight =
+            previewRunId && (r["模型"] === previewRunId || r.model === previewRunId)
+              ? " class=\"lb-hl\""
+              : "";
+          return `<tr${highlight}>${cols
+            .map((c) => `<td>${escapeHtml(r[c] ?? "")}</td>`)
+            .join("")}</tr>`;
+        })
+        .join("");
+    } catch (ex) {
+      tbody.innerHTML = `<tr><td class="error">${escapeHtml(String(ex))}</td></tr>`;
+    }
+  }
+
   async function loadHistory() {
     const list = $("#run-list");
     list.innerHTML = "<li class='muted'>加载中…</li>";
@@ -243,10 +397,12 @@
       list.innerHTML = "";
       for (const r of runs) {
         const li = document.createElement("li");
+        li.dataset.runId = r.run_id;
+        if (previewRunId && previewRunId === r.run_id) li.classList.add("active");
         li.innerHTML = `
           <span class="id">${escapeHtml(r.run_id)}</span>
           <span class="phase-badge ${escapeHtml(r.phase || "")}">${escapeHtml(r.phase || "—")}</span>
-          <span class="muted">${escapeHtml(r.mode || "")} · ${escapeHtml(r.router_mode || "")} · ${escapeHtml(r.updated_at || "")}</span>
+          <span class="meta">${escapeHtml(r.mode || "")} · ${escapeHtml(r.router_mode || "")}<br>${escapeHtml(r.updated_at || "")}</span>
         `;
         li.addEventListener("click", () => showResults(r.run_id));
         list.appendChild(li);
@@ -336,48 +492,74 @@
     renderNode(tree, container, 0);
   }
 
+  function renderMetricsSummary(st, metrics, metricsRow) {
+    const mode = st.mode || metrics.mode || "—";
+    const router = st.router_mode || metrics.router_mode || "—";
+    const off = st.offload_mode || metrics.offload_mode || "—";
+    const offLabel = router === "slm_only" ? "—" : off || "—";
+    const meta = `mode ${escapeHtml(mode)} · router ${escapeHtml(router)} · offload_mode ${escapeHtml(offLabel)}`;
+    let rowHtml = "";
+    if (metricsRow) {
+      const cells = String(metricsRow)
+        .replace(/^\|/, "")
+        .replace(/\|$/, "")
+        .split("|")
+        .map((c) => c.trim());
+      const headers = [
+        "模型",
+        mode === "terminal" || mode === "deepswe" ? "正确率" : "正确数",
+        "调用率",
+        "轮次调用率",
+        "调用次数",
+        "总轮次",
+        "SLM prompt",
+        "SLM output",
+        "LLM input",
+        "LLM output",
+        "slm_cost",
+        "llm_cost",
+        "cost_sum",
+      ];
+      rowHtml = `<div class="metrics-table-wrap"><table class="metrics-mini"><thead><tr>${headers
+        .map((h) => `<th>${h}</th>`)
+        .join("")}</tr></thead><tbody><tr>${cells
+        .map((c) => `<td>${escapeHtml(c)}</td>`)
+        .join("")}</tr></tbody></table></div>`;
+    } else if (metrics && metrics.score) {
+      rowHtml = `<div class="muted mono">${escapeHtml(metrics.score)} · 调用率 ${escapeHtml(
+        String(metrics.call_rate || "—")
+      )} · 轮次调用率 ${escapeHtml(String(metrics.turn_call_rate || "—"))}</div>`;
+    }
+    return `<div class="run-meta-line">${meta}</div>${rowHtml}`;
+  }
+
   async function showResults(runId) {
-    const detail = $("#result-detail");
-    detail.hidden = false;
     previewRunId = runId;
     previewCache = { path: "", text: "", trajData: null };
-    $("#result-title").textContent = runId;
+    $$("#run-list li").forEach((li) => {
+      li.classList.toggle("active", li.dataset.runId === runId);
+    });
+    const title = $("#result-title");
+    if (title) {
+      title.textContent = runId;
+      title.classList.remove("muted");
+    }
     $("#result-summary").textContent = "加载中…";
     $("#file-tree").innerHTML = "";
     $("#preview-path").textContent = "点击左侧文件预览";
     $("#traj-view-toggle").hidden = true;
     $("#preview-body").innerHTML =
-      '<p class="muted">左侧按文件夹选文件；轨迹可在「对话 / JSON」间切换。</p>';
+      '<p class="muted">左侧按文件夹选文件；轨迹可在「format / JSON」间切换。</p>';
     try {
       const res = await fetch(apiUrl(`/api/runs/${encodeURIComponent(runId)}/results`));
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "failed");
-      const s = data.summary || {};
       const st = data.status || {};
-      const parts = [
-        `<div><strong>mode</strong> ${escapeHtml(st.mode || data.eval_dir || "—")}</div>`,
-        `<div><strong>phase</strong> ${escapeHtml(st.phase || "—")}</div>`,
-        `<div><strong>router</strong> ${escapeHtml(st.router_mode || "—")}</div>`,
-      ];
-      if (s.preds_exists != null) {
-        parts.push(
-          `<div><strong>preds</strong> ${s.preds_exists ? "yes" : "no"}${s.preds_path ? ` (${escapeHtml(s.preds_path)})` : ""}</div>`
-        );
+      const metrics = data.metrics || {};
+      if (st.mode && ["swe_20filter", "swe", "terminal", "deepswe"].includes(st.mode)) {
+        leaderboardMode = st.mode;
       }
-      if (s.resolved != null || s.total != null) {
-        parts.push(`<div><strong>resolved</strong> ${s.resolved ?? "?"} / ${s.total ?? "?"}</div>`);
-      }
-      if (s.primary_report) {
-        parts.push(`<div><strong>report</strong> ${escapeHtml(s.primary_report)}</div>`);
-      }
-      if (s.reward_mean != null) {
-        parts.push(`<div><strong>reward_mean</strong> ${s.reward_mean}</div>`);
-      }
-      if (s.n_trials != null) {
-        parts.push(`<div><strong>n_trials</strong> ${s.n_trials}</div>`);
-      }
-      $("#result-summary").innerHTML = parts.join("");
-
+      $("#result-summary").innerHTML = renderMetricsSummary(st, metrics, data.metrics_row);
       renderFileTree($("#file-tree"), pathsToTree(data.files || []), runId);
     } catch (ex) {
       $("#result-summary").innerHTML = `<span class="error">${escapeHtml(String(ex))}</span>`;

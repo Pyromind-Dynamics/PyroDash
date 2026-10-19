@@ -18,10 +18,18 @@ from pydantic import BaseModel, Field
 HTML_DIR = Path(__file__).resolve().parent
 RUN_USE_ROOT = HTML_DIR.parent
 OUTPUT_DIR = RUN_USE_ROOT / "output"
+RESULT_MD = RUN_USE_ROOT / "result.md"
 RUN_SH = RUN_USE_ROOT / "run_sh" / "run_coding.sh"
 
 SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 SUPPORTED_MODES = ("swe", "swe_20filter", "deepswe", "terminal")
+
+from metrics import (  # noqa: E402
+    compute_run_metrics,
+    format_metrics_row,
+    parse_leaderboard,
+    persist_run_to_result_md,
+)
 
 app = FastAPI(title="PyroDash run_use", version="0.2.0")
 
@@ -382,6 +390,7 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         "run_id": run_id,
         "mode": body.mode,
         "router_mode": body.router_mode,
+        "offload_mode": body.offload_mode,
         "phase": "starting_adapter",
         "message": "launched from web UI",
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -478,6 +487,31 @@ def get_run(run_id: str, log_tail: int = 48000) -> dict[str, Any]:
     }
 
 
+@app.get("/api/leaderboard")
+def api_leaderboard(mode: str = "swe_20filter") -> dict[str, Any]:
+    if mode not in SUPPORTED_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"mode must be one of {', '.join(SUPPORTED_MODES)}",
+        )
+    data = parse_leaderboard(RESULT_MD, mode)
+    data["result_md"] = str(RESULT_MD)
+    return data
+
+
+@app.post("/api/runs/{run_id}/sync_result")
+def sync_run_result(run_id: str) -> dict[str, Any]:
+    """Recompute metrics and upsert into result.md (manual refresh)."""
+    run_dir = _run_dir(run_id)
+    if not run_dir.is_dir():
+        raise HTTPException(status_code=404, detail="run not found")
+    try:
+        out = persist_run_to_result_md(run_dir, RESULT_MD, force=True)
+    except Exception as ex:
+        raise HTTPException(status_code=500, detail=str(ex)) from ex
+    return out
+
+
 @app.get("/api/runs/{run_id}/results")
 def get_results(run_id: str) -> dict[str, Any]:
     run_dir = _run_dir(run_id)
@@ -493,11 +527,14 @@ def get_results(run_id: str) -> dict[str, Any]:
         if mode in ("deepswe", "terminal") or not summary.get("preds_exists"):
             job = _parse_job_summary(eval_dir)
             summary = {**summary, **job}
+    metrics = compute_run_metrics(run_dir)
     return {
         "run_id": run_id,
         "status": status,
         "eval_dir": eval_dir.name if eval_dir else None,
         "summary": summary,
+        "metrics": metrics,
+        "metrics_row": format_metrics_row(metrics),
         "files": _list_relative_files(run_dir),
     }
 

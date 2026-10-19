@@ -135,10 +135,10 @@ write_status() {
   local phase="$1"
   local message="${2:-}"
   local extra="${3:-}"
-  "${PYTHON_BIN}" - "${STATUS_FILE}" "${phase}" "${message}" "${RUN_ID}" "${ROUTER_MODE}" "${MODE}" "${extra}" <<'PY'
+  "${PYTHON_BIN}" - "${STATUS_FILE}" "${phase}" "${message}" "${RUN_ID}" "${ROUTER_MODE}" "${MODE}" "${OFFLOAD_MODE}" "${extra}" <<'PY'
 import json, sys, time
 from pathlib import Path
-path, phase, message, run_id, router, mode, extra = sys.argv[1:8]
+path, phase, message, run_id, router, mode, offload_mode, extra = sys.argv[1:9]
 prev = {}
 p = Path(path)
 if p.exists():
@@ -151,6 +151,7 @@ data = {
     "run_id": run_id,
     "mode": mode,
     "router_mode": router,
+    "offload_mode": offload_mode,
     "phase": phase,
     "message": message,
     "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -343,6 +344,19 @@ kill "${PROGRESS_PID}" 2>/dev/null || true
 wait "${PROGRESS_PID}" 2>/dev/null || true
 
 tail -n 40 "${EVAL_LOG}" || true
+
+# Upsert this run into run_use/result.md (same columns / prices as history tables)
+if [[ -f "${RUN_USE_ROOT}/html/metrics.py" ]]; then
+  (
+    cd "${RUN_USE_ROOT}/html"
+    "${PYTHON_BIN}" -c "
+from pathlib import Path
+from metrics import persist_run_to_result_md
+out = persist_run_to_result_md(Path('${RUN_DIR}'), Path('${RUN_USE_ROOT}/result.md'))
+print(f\"[run] result.md written={out.get('written')} mode={out.get('mode')} score={out.get('row', {}).get('score')}\")
+"
+  ) || true
+fi
 
 if [[ "${EVAL_RC}" -ne 0 ]]; then
   write_status "failed" "eval.sh exited ${EVAL_RC}"

@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=4" />
+  <link rel="stylesheet" href="styles.css?v=10" />
 </head>
 <body>
   <div class="page">
@@ -30,7 +30,8 @@
       </div>
       <nav class="tabs" role="tablist">
         <button type="button" class="tab active" data-tab="run">发起评测</button>
-        <button type="button" class="tab" data-tab="history">历史结果</button>
+        <button type="button" class="tab" data-tab="tables">对比表</button>
+        <button type="button" class="tab" data-tab="files">文件</button>
       </nav>
     </header>
 
@@ -41,7 +42,48 @@
 
         <form id="run-form" class="form">
           <fieldset>
-            <legend>模式</legend>
+            <legend>Router</legend>
+            <label>
+              ROUTER
+              <select name="router_mode" id="router-select">
+                <option value="tag" selected>tag — 小模型输出 &lt;|llm_offload|&gt; 标记后交给大模型</option>
+                <option value="entropy">entropy — 按思考 token 熵自动决定是否整段交给大模型重写</option>
+                <option value="slm_only">slm_only — 只用小模型，不调用大模型</option>
+              </select>
+            </label>
+            <label id="offload-mode-label">
+              OFFLOAD_MODE（仅 tag）
+              <select name="offload_mode" id="offload-mode-select">
+                <option value="handoff" selected>handoff — 保留小模型已写内容，大模型从断点续写（&lt;part_think&gt;）</option>
+                <option value="rewrite">rewrite — 丢弃小模型本轮输出，由大模型整段重写</option>
+                <option value="keep">keep — 保留小模型文本，大模型直接续写（无 part_think 协议）</option>
+              </select>
+            </label>
+            <p id="router-help" class="field-help full"></p>
+          </fieldset>
+
+          <fieldset id="ports-fieldset">
+            <legend>端口 / 资源</legend>
+            <label id="adapter-port-label">
+              ADAPTER_PORT
+              <input name="adapter_port" id="adapter-port" type="number" value="18027" />
+            </label>
+            <label>
+              VLLM_PORT
+              <input name="vllm_port" type="number" value="8007" />
+            </label>
+            <label>
+              CUDA_VISIBLE_DEVICES
+              <input name="cuda_visible_devices" type="text" value="0" />
+            </label>
+            <label>
+              RUN_ID（可空，自动生成）
+              <input name="run_id" type="text" placeholder="mode_YYYYMMDD_HHMMSS" />
+            </label>
+          </fieldset>
+
+          <fieldset>
+            <legend>评测模式</legend>
             <label>
               MODE
               <select name="mode" id="mode-select">
@@ -49,22 +91,6 @@
                 <option value="swe_20filter" selected>swe_20filter（20 题特例）</option>
                 <option value="deepswe">deepswe</option>
                 <option value="terminal">terminal</option>
-              </select>
-            </label>
-            <label>
-              ROUTER
-              <select name="router_mode" id="router-select">
-                <option value="tag" selected>tag（offload）</option>
-                <option value="entropy">entropy（offload）</option>
-                <option value="slm_only">slm_only（仅小模型）</option>
-              </select>
-            </label>
-            <label id="offload-mode-label">
-              OFFLOAD_MODE
-              <select name="offload_mode" id="offload-mode-select">
-                <option value="handoff" selected>handoff</option>
-                <option value="rewrite">rewrite</option>
-                <option value="keep">keep</option>
               </select>
             </label>
           </fieldset>
@@ -97,29 +123,40 @@
             </label>
           </fieldset>
 
-          <fieldset>
-            <legend>SLM（二选一）</legend>
-            <label class="full">
+          <fieldset id="slm-fieldset">
+            <legend>SLM</legend>
+            <div class="seg-toggle full" id="slm-source-toggle" role="group" aria-label="SLM source">
+              <label class="seg-opt">
+                <input type="radio" name="slm_source" value="local" checked />
+                <span>本地权重</span>
+              </label>
+              <label class="seg-opt">
+                <input type="radio" name="slm_source" value="remote" />
+                <span>远程 API</span>
+              </label>
+            </div>
+            <label class="full" id="slm-local-fields">
               MODEL_PATH（本地权重目录）
-              <input name="model_path" type="text" placeholder="/path/to/checkpoint_hf" />
+              <input name="model_path" id="model-path" type="text" placeholder="/path/to/checkpoint_hf" />
             </label>
-            <div class="or">或远程 API</div>
-            <label>
-              SLM_BASE_URL
-              <input name="slm_base_url" type="text" placeholder="http://host:8000/v1" />
-            </label>
-            <label>
-              SLM_MODEL
-              <input name="slm_model" type="text" placeholder="model-name" />
-            </label>
-            <label>
-              SLM_API_KEY
-              <input name="slm_api_key" type="text" value="dummy" />
-            </label>
+            <div id="slm-remote-fields" class="slm-remote" hidden>
+              <label class="full">
+                SLM_BASE_URL
+                <input name="slm_base_url" id="slm-base-url" type="text" placeholder="http://host:8000/v1" />
+              </label>
+              <label>
+                SLM_MODEL
+                <input name="slm_model" id="slm-model" type="text" placeholder="model-name" />
+              </label>
+              <label>
+                SLM_API_KEY
+                <input name="slm_api_key" id="slm-api-key" type="text" value="dummy" />
+              </label>
+            </div>
           </fieldset>
 
           <fieldset id="llm-fieldset">
-            <legend>LLM（slm_only 可不填）</legend>
+            <legend>LLM</legend>
             <label class="full">
               LLM_BASE_URL
               <input name="llm_base_url" id="llm-base-url" type="text" placeholder="https://api.example.com/v1" />
@@ -131,26 +168,6 @@
             <label>
               LLM_API_KEY
               <input name="llm_api_key" id="llm-api-key" type="password" />
-            </label>
-          </fieldset>
-
-          <fieldset>
-            <legend>端口</legend>
-            <label>
-              ADAPTER_PORT
-              <input name="adapter_port" type="number" value="18027" />
-            </label>
-            <label>
-              VLLM_PORT
-              <input name="vllm_port" type="number" value="8007" />
-            </label>
-            <label>
-              CUDA_VISIBLE_DEVICES
-              <input name="cuda_visible_devices" type="text" value="0" />
-            </label>
-            <label>
-              RUN_ID（可空，自动生成）
-              <input name="run_id" type="text" placeholder="mode_YYYYMMDD_HHMMSS" />
             </label>
           </fieldset>
 
@@ -194,30 +211,64 @@
         </div>
       </section>
 
-      <section id="panel-history" class="panel">
+      <section id="panel-tables" class="panel">
         <div class="history-head">
-          <h1>历史结果</h1>
-          <button type="button" class="btn" id="btn-refresh">刷新</button>
+          <h1>对比表</h1>
+          <div class="history-head-actions">
+            <button type="button" class="btn" id="btn-refresh-tables">刷新</button>
+          </div>
         </div>
-        <ul id="run-list" class="run-list"></ul>
-        <div id="result-detail" class="result-detail" hidden>
-          <h2 id="result-title"></h2>
-          <div id="result-summary" class="summary"></div>
-          <div class="history-split">
-            <aside class="history-files">
-              <h3>文件树</h3>
-              <div id="file-tree" class="file-tree"></div>
-            </aside>
-            <div class="history-preview">
-              <div class="preview-head">
-                <span id="preview-path" class="mono muted">点击左侧文件预览</span>
-                <div id="traj-view-toggle" class="traj-view-toggle" hidden>
-                  <button type="button" class="btn traj-btn active" data-view="chat">对话</button>
-                  <button type="button" class="btn traj-btn" data-view="json">JSON</button>
+        <p class="lede tables-lede">按 mode 查看 <code>result.md</code> 历史指标；跑完会自动追加。文件请到「文件」页查看。</p>
+        <div class="leaderboard-bar">
+          <div id="leaderboard-tabs" class="leaderboard-tabs" role="tablist">
+            <button type="button" class="lb-tab active" data-mode="swe_20filter">20filter</button>
+            <button type="button" class="lb-tab" data-mode="swe">500</button>
+            <button type="button" class="lb-tab" data-mode="terminal">Terminal</button>
+            <button type="button" class="lb-tab" data-mode="deepswe">DeepSWE</button>
+          </div>
+        </div>
+        <div id="leaderboard-wrap" class="leaderboard-wrap">
+          <table id="leaderboard-table" class="leaderboard-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+          <p id="leaderboard-empty" class="muted" hidden>该 mode 暂无行</p>
+        </div>
+      </section>
+
+      <section id="panel-files" class="panel">
+        <div class="history-head">
+          <h1>文件</h1>
+          <div class="history-head-actions">
+            <button type="button" class="btn" id="btn-sync-result" title="把当前 run 指标写入 result.md">同步到表</button>
+            <button type="button" class="btn" id="btn-refresh">刷新</button>
+          </div>
+        </div>
+        <div class="history-layout">
+          <aside class="history-runs">
+            <ul id="run-list" class="run-list"></ul>
+          </aside>
+          <div class="history-main">
+            <div id="result-detail" class="result-detail">
+              <h2 id="result-title" class="muted">选择左侧 run</h2>
+              <div id="result-summary" class="summary"></div>
+              <div class="history-split">
+                <aside class="history-files">
+                  <h3>文件树</h3>
+                  <div id="file-tree" class="file-tree"></div>
+                </aside>
+                <div class="history-preview">
+                  <div class="preview-head">
+                    <span id="preview-path" class="mono muted">点击左侧文件预览</span>
+                    <div id="traj-view-toggle" class="traj-view-toggle" hidden>
+                      <button type="button" class="btn traj-btn active" data-view="chat">format</button>
+                      <button type="button" class="btn traj-btn" data-view="json">JSON</button>
+                    </div>
+                  </div>
+                  <div id="preview-body" class="preview-body">
+                    <p class="muted">左侧选 run 与文件；轨迹可在「format / JSON」间切换。</p>
+                  </div>
                 </div>
-              </div>
-              <div id="preview-body" class="preview-body">
-                <p class="muted">左侧按文件夹选文件；轨迹可在「对话 / JSON」间切换。</p>
               </div>
             </div>
           </div>
@@ -225,6 +276,6 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=10"></script>
 </body>
 </html>

@@ -221,3 +221,4 @@ __marimo__/
 # Runtime logs / eval outputs (do not commit)
 logs/
 output/
+run_use/result.md
