@@ -6,6 +6,15 @@
 2. 调用 adapter `POST /v1/math/complete`  
 3. `\boxed{}` 判分并写出 JSON  
 
+## 依赖
+
+```bash
+# 仓库根 + 本目录（数学判分 / 数据集）
+pip install -r requirements.txt -r evaluation/evaluation_math/requirements.txt
+# adapter 额外依赖（可选，装到同一 vLLM 环境）
+pip install -r offload/offload_math/requirements.txt
+```
+
 ## 前置
 
 ```bash
@@ -14,6 +23,7 @@ MODEL_PATH=/path/to/math_slm \
 LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash offload/offload_math/api.sh
 ```
+
 
 默认 adapter：`http://127.0.0.1:18031`。
 

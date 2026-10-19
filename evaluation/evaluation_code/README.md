@@ -29,3 +29,14 @@ Configured only in [`run_use`](../../run_use) (web UI or `run_sh/run_coding.sh`)
 
 - `PYTHON_BIN` / `VLLM_BIN` — SLM / adapter
 - `HARNESS_PYTHON` — swebench + docker (+ `mini-extra` on `PATH`)
+
+### Per-task pip deps
+
+Install **repo root** `requirements.txt` plus the task folder’s own file:
+
+| Task | Extra requirements |
+|------|--------------------|
+| SWE-bench | [`swe-bench/requirements.txt`](swe-bench/requirements.txt) |
+| DeepSWE | [`deepswe1.1/requirements.txt`](deepswe1.1/requirements.txt) |
+| Terminal-Bench | [`terminal-sh/requirements.txt`](terminal-sh/requirements.txt) |
+

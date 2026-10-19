@@ -4,10 +4,18 @@ Eval client only. Start an [offload_code](../../../offload/offload_code) adapter
 
 Pier runs **agent + verifier** in one job (no separate harness).
 
+## Dependencies
+
+```bash
+pip install -r ../../../requirements.txt -r requirements.txt
+uv tool install datacurve-pier   # pier on PATH; need > 0.3.0 for DeepSWE 1.1
+```
+
 ## Prerequisites
 
-- `pier` on PATH (`uv tool install datacurve-pier`, need > 0.3.0 for DeepSWE 1.1)
+- `pier` on PATH (see above)
 - DeepSWE task tree (not vendored here):
+
 
 ```bash
 git clone https://github.com/datacurve-ai/deep-swe

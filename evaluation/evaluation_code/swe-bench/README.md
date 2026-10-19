@@ -2,7 +2,22 @@
 
 Eval client only. Start an [offload_code](../../../offload/offload_code) adapter first, then pass its port here.
 
+## Dependencies
+
+```bash
+# Repo root + this folder (enough for the SWE harness / mini-extra env)
+pip install -r ../../../requirements.txt -r requirements.txt
+```
+
+Preferred via `run_use` (two envs):
+
+| Env | Install |
+|-----|---------|
+| `VENV_DIR` (vLLM / adapter) | root `requirements.txt` + `offload/offload_code/requirements.txt` |
+| `HARNESS_PYTHON` (swebench) | this folder’s `requirements.txt` (`swebench`, `mini-swe-agent`, `docker`) |
+
 ## Usage
+
 
 ```bash
 # Terminal 1 — start offload API (fill MODEL_PATH / LLM_* in api.sh)

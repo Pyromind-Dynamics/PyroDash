@@ -1,0 +1,9 @@
+# DeepSWE 1.1 client (install on top of repo-root requirements.txt):
+#   pip install -r requirements.txt -r evaluation/evaluation_code/deepswe1.1/requirements.txt
+#
+# Pier CLI is separate (not always on PyPI as a normal dep):
+#   uv tool install datacurve-pier   # need > 0.3.0 for DeepSWE 1.1
+# Ensure `pier` is on PATH.
+
+mini-swe-agent>=2.0.0
+requests>=2.31.0

@@ -4,10 +4,18 @@ Eval client only. Start an [offload_code](../../../offload/offload_code) adapter
 
 Uses Harbor + `mini-swe-agent` (no local offload proxy — that lives in `offload_code`).
 
+## Dependencies
+
+```bash
+pip install -r ../../../requirements.txt -r requirements.txt
+# Install Harbor CLI separately so `harbor` is on PATH
+```
+
 ## Prerequisites
 
 - `harbor` on PATH
 - Dataset pullable by Harbor (default `terminal-bench/terminal-bench-2-1`)
+
 
 ## Usage
 

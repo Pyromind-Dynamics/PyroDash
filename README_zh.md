@@ -58,7 +58,11 @@
 ```bash
 git clone https://github.com/PyroMind-Dynamics/pyroDash.git
 cd pyroDash
+# 公共 / SLM serving
 pip install -r requirements.txt
+# 按任务再装对应目录（示例）：
+#   pip install -r evaluation/evaluation_math/requirements.txt
+#   pip install -r evaluation/evaluation_code/swe-bench/requirements.txt
 ```
 
 ### 2. 数学 Offload + 评测

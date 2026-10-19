@@ -1,0 +1,8 @@
+# Terminal-Bench client (install on top of repo-root requirements.txt):
+#   pip install -r requirements.txt -r evaluation/evaluation_code/terminal-sh/requirements.txt
+#
+# Harbor CLI must be on PATH (install per Harbor docs), e.g. after setup:
+#   which harbor
+
+mini-swe-agent>=2.0.0
+requests>=2.31.0

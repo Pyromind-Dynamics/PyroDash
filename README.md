@@ -58,7 +58,11 @@ During training, PyroDash follows a three-stage progressive optimization pipelin
 ```bash
 git clone https://github.com/PyroMind-Dynamics/pyroDash.git
 cd pyroDash
+# Shared / SLM serving
 pip install -r requirements.txt
+# Then install the task folder you need, e.g.:
+#   pip install -r evaluation/evaluation_math/requirements.txt
+#   pip install -r evaluation/evaluation_code/swe-bench/requirements.txt
 ```
 
 ### 2. Math offload + evaluation

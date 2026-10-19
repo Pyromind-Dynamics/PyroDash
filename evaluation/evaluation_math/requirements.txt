@@ -1,0 +1,12 @@
+# Math eval client (install on top of repo-root requirements.txt):
+#   pip install -r requirements.txt -r evaluation/evaluation_math/requirements.txt
+#
+# Adapter / vLLM: also see offload/offload_math/requirements.txt
+
+math-verify
+mathruler
+pylatexenc
+pandas
+datasets
+requests
+tqdm
