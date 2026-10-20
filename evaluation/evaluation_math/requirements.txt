@@ -7,6 +7,7 @@ math-verify
 mathruler
 pylatexenc
 pandas
-datasets
+# datasets<2.14.7 subclasses pyarrow.PyExtensionType, removed in pyarrow>=21.
+datasets>=4.4.0
 requests
 tqdm

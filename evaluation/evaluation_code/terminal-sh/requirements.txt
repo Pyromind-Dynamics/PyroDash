@@ -6,3 +6,5 @@
 
 mini-swe-agent>=2.0.0
 requests>=2.31.0
+# datasets<2.14.7 subclasses pyarrow.PyExtensionType, removed in pyarrow>=21.
+datasets>=4.4.0

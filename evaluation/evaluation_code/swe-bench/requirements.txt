@@ -11,3 +11,6 @@ swebench>=4.0.0
 mini-swe-agent>=2.0.0
 docker>=7.0.0
 requests>=2.31.0
+# datasets<2.14.7 subclasses pyarrow.PyExtensionType, removed in pyarrow>=21.
+# 4.4+ requires pyarrow>=21 and uses ExtensionType, so the pair stays compatible.
+datasets>=4.4.0
