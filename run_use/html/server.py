@@ -84,7 +84,7 @@ class StartRunRequest(BaseModel):
     run_id: str = ""
     resume: bool = False
     # Required from web UI (or process env when launching server with exports).
-    venv_dir: str = ""  # SLM/vLLM env prefix (.venv or conda env root)
+    vllm_env: str = ""  # vLLM / SLM conda env root
     harness_python: str = ""  # SWE harness: env root or .../bin/python
 
 
@@ -124,16 +124,16 @@ def _python_in_prefix(prefix: Path) -> Path:
 
 
 def _resolve_run_python_envs(body: StartRunRequest) -> tuple[Path, Path]:
-    """Return (venv_dir, harness_python) from UI fields, else process env. No machine defaults."""
-    venv_raw = (body.venv_dir or "").strip() or os.environ.get("VENV_DIR", "").strip()
+    """Return (vllm_env, harness_python) from UI fields, else process env. No machine defaults."""
+    vllm_raw = (body.vllm_env or "").strip() or os.environ.get("VLLM_ENV", "").strip()
     harness_raw = (body.harness_python or "").strip() or os.environ.get(
         "HARNESS_PYTHON", ""
     ).strip()
 
-    if not venv_raw:
+    if not vllm_raw:
         raise HTTPException(
             status_code=400,
-            detail="venv_dir required (SLM/vLLM 环境路径，在网页「Python 环境」填写)",
+            detail="vllm_env required (vLLM 环境路径，在网页「Python 环境」填写)",
         )
     if not harness_raw:
         raise HTTPException(
@@ -141,11 +141,11 @@ def _resolve_run_python_envs(body: StartRunRequest) -> tuple[Path, Path]:
             detail="harness_python required (SWE harness 环境路径，在网页「Python 环境」填写)",
         )
 
-    venv_prefix = _resolve_env_prefix(venv_raw)
-    if venv_prefix is None:
+    vllm_prefix = _resolve_env_prefix(vllm_raw)
+    if vllm_prefix is None:
         raise HTTPException(
             status_code=400,
-            detail=f"invalid venv_dir: {venv_raw}",
+            detail=f"invalid vllm_env: {vllm_raw}",
         )
 
     harness_prefix = _resolve_env_prefix(harness_raw)
@@ -154,7 +154,7 @@ def _resolve_run_python_envs(body: StartRunRequest) -> tuple[Path, Path]:
     else:
         harness_py = Path(harness_raw).expanduser()
 
-    return venv_prefix, harness_py
+    return vllm_prefix, harness_py
 
 
 def _conda_env_roots_from_env() -> list[Path]:
@@ -468,12 +468,12 @@ def list_modes() -> dict[str, Any]:
 
 @app.get("/api/envs")
 def list_envs() -> dict[str, Any]:
-    """Suggest conda/.venv prefixes for the Python-env form fields."""
+    """Suggest conda env prefixes for the Python-env form fields."""
     envs = _discover_conda_envs()
     return {
         "envs": envs,
         "defaults": {
-            "venv_dir": os.environ.get("VENV_DIR", ""),
+            "vllm_env": os.environ.get("VLLM_ENV", ""),
             "harness_python": os.environ.get("HARNESS_PYTHON", ""),
         },
     }
@@ -580,25 +580,25 @@ def start_run(body: StartRunRequest) -> JSONResponse:
     # Prefer slm_port; fall back to legacy vllm_port when client only sends that.
     slm_port = int(body.slm_port or body.vllm_port or 8007)
     # Python envs: UI fields first, then process env (resolved in run_use only).
-    venv_dir, harness_py = _resolve_run_python_envs(body)
-    python_bin = _python_in_prefix(venv_dir)
-    vllm_bin = venv_dir / "bin" / "vllm"
+    vllm_env, harness_py = _resolve_run_python_envs(body)
+    python_bin = _python_in_prefix(vllm_env)
+    vllm_bin = vllm_env / "bin" / "vllm"
     if not python_bin.is_file():
         raise HTTPException(
             status_code=400,
-            detail=f"SLM/vLLM env missing python: {python_bin} (check VENV_DIR)",
+            detail=f"vLLM env missing python: {python_bin} (check VLLM_ENV)",
         )
     if body.model_path and slm_backend == "vllm" and not vllm_bin.is_file():
         raise HTTPException(
             status_code=400,
-            detail=f"vllm binary not found: {vllm_bin} (check SLM/vLLM 环境路径)",
+            detail=f"vllm binary not found: {vllm_bin} (check vLLM 环境路径)",
         )
     if not harness_py.is_file():
         raise HTTPException(
             status_code=400,
             detail=f"SWE harness python not found: {harness_py} (check HARNESS_PYTHON)",
         )
-    path_parts = [str(venv_dir / "bin"), str(harness_py.parent)]
+    path_parts = [str(vllm_env / "bin"), str(harness_py.parent)]
     if os.environ.get("PATH"):
         path_parts.append(os.environ["PATH"])
     env = os.environ.copy()
@@ -626,10 +626,10 @@ def start_run(body: StartRunRequest) -> JSONResponse:
             "DEEPSWE_TASKS": body.deepswe_tasks,
             "TB_DATASET": body.tb_dataset,
             "RESUME": "1" if resumed else "0",
-            "VENV_DIR": str(venv_dir),
+            "VLLM_ENV": str(vllm_env),
             "PYTHON_BIN": str(python_bin),
             "VLLM_BIN": str(vllm_bin),
-            "VLLM_CONDA_PREFIX": str(venv_dir),
+            "VLLM_CONDA_PREFIX": str(vllm_env),
             "HARNESS_PYTHON": str(harness_py),
             "PATH": ":".join(path_parts),
         }

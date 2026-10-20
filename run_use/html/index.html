@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=12" />
+  <link rel="stylesheet" href="styles.css?v=13" />
 </head>
 <body>
   <div class="page">
@@ -81,17 +81,17 @@
           <fieldset id="python-env-fieldset">
             <legend>Python 环境</legend>
             <p class="field-help full">
-              两套环境分开选：<strong>SLM / vLLM</strong> 跑小模型与 adapter；
-              <strong>SWE harness</strong> 跑 mini-extra + swebench 打分。可填 conda env 目录或 python 路径。
+              两套环境分开选：<strong>vLLM 环境</strong> 跑小模型与 adapter；
+              <strong>SWE harness 环境</strong> 跑 mini-extra + swebench 打分。可填 conda env 目录或 python 路径。
             </p>
             <label class="full">
-              SLM / vLLM 环境（VENV_DIR）
+              vLLM 环境（VLLM_ENV）
               <input
-                name="venv_dir"
-                id="venv-dir"
+                name="vllm_env"
+                id="vllm-env"
                 type="text"
                 list="conda-env-suggestions"
-                placeholder="/path/to/conda/envs/vllm 或 /path/to/.venv"
+                placeholder="/path/to/conda/envs/vllm"
                 autocomplete="off"
               />
             </label>
@@ -347,6 +347,6 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>

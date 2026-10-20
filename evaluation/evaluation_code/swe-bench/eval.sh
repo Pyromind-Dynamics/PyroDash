@@ -18,6 +18,7 @@ esac
 
 # If EVAL_OUTPUT_DIR is set, redirect runs/verified under it (for run_use pipelines).
 if [[ -n "${EVAL_OUTPUT_DIR:-}" ]]; then
+  EVAL_OUTPUT_DIR="$(cd "${EVAL_OUTPUT_DIR}" 2>/dev/null && pwd || echo "${EVAL_OUTPUT_DIR}")"
   OUT_DIR="${EVAL_OUTPUT_DIR}/runs"
   EVAL_DIR="${EVAL_OUTPUT_DIR}/verified"
 else
@@ -25,6 +26,8 @@ else
   EVAL_DIR="${SCRIPT_DIR}/output/verified"
 fi
 mkdir -p "${OUT_DIR}" "${EVAL_DIR}"
+OUT_DIR="$(cd "${OUT_DIR}" && pwd)"
+EVAL_DIR="$(cd "${EVAL_DIR}" && pwd)"
 
 ADAPTER_HOST="${ADAPTER_HOST:-127.0.0.1}"
 ADAPTER_PORT="${ADAPTER_PORT:-}"
@@ -197,32 +200,34 @@ if ! "${HARNESS_PYTHON}" -c "import docker, swebench" >/dev/null 2>&1; then
   echo "  Fix:  pip install docker swebench   OR set HARNESS_PYTHON to an env that has them" >&2
   exit 1
 fi
-# Some swebench builds ignore --report_dir and write <model>.<run_id>.json to CWD.
-# Always collect the report into EVAL_DIR afterward so metrics can find it.
-"${HARNESS_PYTHON}" "${SCRIPT_DIR}/run_harness.py" \
-  --dataset_name "${DATASET_NAME}" \
-  --predictions_path "${PREDS}" \
-  --max_workers "${HARNESS_WORKERS}" \
-  --run_id "${RUN_ID}" \
-  --report_dir "${EVAL_DIR}" \
-  --cache_level instance \
-  --clean False
-
+# swebench 4.x ignores --report_dir and writes <model>.<run_id>.json + logs/run_evaluation/
+# to CWD. Run inside EVAL_DIR so all harness outputs stay under output/<run>/.../verified/.
 mkdir -p "${EVAL_DIR}"
+(
+  cd "${EVAL_DIR}"
+  "${HARNESS_PYTHON}" "${SCRIPT_DIR}/run_harness.py" \
+    --dataset_name "${DATASET_NAME}" \
+    --predictions_path "${PREDS}" \
+    --max_workers "${HARNESS_WORKERS}" \
+    --run_id "${RUN_ID}" \
+    --report_dir "${EVAL_DIR}" \
+    --cache_level instance \
+    --clean False
+)
+
 REPORT_GLOB="*.${RUN_ID}.json"
-# Prefer CWD (common when report_dir is ignored), then report_dir itself.
 for cand in \
   "./${REPORT_GLOB}" \
-  "${EVAL_DIR}/${REPORT_GLOB}" \
-  "${OUT_DIR}/${REPORT_GLOB}"
+  "${OUT_DIR}/${REPORT_GLOB}" \
+  "${EVAL_DIR}/${REPORT_GLOB}"
 do
   # shellcheck disable=SC2086
   for f in ${cand}; do
     [[ -f "${f}" ]] || continue
     base="$(basename "${f}")"
-    if [[ "${f}" != "${EVAL_DIR}/${base}" ]]; then
-      cp -f "${f}" "${EVAL_DIR}/${base}"
-      echo "[eval] collected harness report → ${EVAL_DIR}/${base}"
+    if [[ "$(cd "$(dirname "${f}")" && pwd)/${base}" != "${EVAL_DIR}/${base}" ]]; then
+      mv -f "${f}" "${EVAL_DIR}/${base}"
+      echo "[eval] moved harness report → ${EVAL_DIR}/${base}"
     else
       echo "[eval] harness report → ${f}"
     fi

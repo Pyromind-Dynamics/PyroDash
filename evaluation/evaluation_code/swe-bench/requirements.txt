@@ -2,7 +2,7 @@
 #   pip install -r requirements.txt -r evaluation/evaluation_code/swe-bench/requirements.txt
 #
 # Typical layout (two envs via run_use web UI):
-#   VENV_DIR (vLLM/adapter):  root requirements.txt + offload/offload_code/requirements.txt
+#   VLLM_ENV (vLLM/adapter):  root requirements.txt + offload/offload_code/requirements.txt
 #   HARNESS_PYTHON (harness): this file (swebench + mini-extra + docker SDK)
 #
 # Also needs Docker daemon available to the harness env.

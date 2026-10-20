@@ -140,11 +140,11 @@
     }
   }
 
-  function saveEnvs(venvDir, harnessPython) {
+  function saveEnvs(vllmEnv, harnessPython) {
     try {
       localStorage.setItem(
         ENV_LS_KEY,
-        JSON.stringify({ venv_dir: venvDir, harness_python: harnessPython })
+        JSON.stringify({ vllm_env: vllmEnv, harness_python: harnessPython })
       );
     } catch {
       /* ignore quota */
@@ -152,14 +152,14 @@
   }
 
   async function initPythonEnvFields() {
-    const venvInput = $("#venv-dir");
+    const vllmInput = $("#vllm-env");
     const harnessInput = $("#harness-python");
     const hint = $("#env-detect-hint");
     const list = $("#conda-env-suggestions");
-    if (!venvInput || !harnessInput) return;
+    if (!vllmInput || !harnessInput) return;
 
     const saved = loadSavedEnvs();
-    let remoteDefaults = { venv_dir: "", harness_python: "" };
+    let remoteDefaults = { vllm_env: "", harness_python: "" };
     let suggestions = [];
     try {
       const res = await fetch(apiUrl("/api/envs"));
@@ -176,8 +176,8 @@
         .join("");
     }
 
-    if (!venvInput.value) {
-      venvInput.value = saved.venv_dir || remoteDefaults.venv_dir || "";
+    if (!vllmInput.value) {
+      vllmInput.value = saved.vllm_env || remoteDefaults.vllm_env || "";
     }
     if (!harnessInput.value) {
       harnessInput.value = saved.harness_python || remoteDefaults.harness_python || "";
@@ -186,7 +186,7 @@
     if (hint) {
       const n = suggestions.length;
       hint.textContent = n
-        ? `已扫描到 ${n} 个 conda/.venv，可下拉选择或直接粘贴路径。上次填写会保存在本机浏览器。`
+        ? `已扫描到 ${n} 个 conda 环境，可下拉选择或直接粘贴路径。上次填写会保存在本机浏览器。`
         : "未扫描到 conda envs；请直接填写环境目录或 python 路径。上次填写会保存在本机浏览器。";
     }
   }
@@ -263,7 +263,7 @@
     const slmModel = slmSource === "remote" ? (fd.get("slm_model") || "").trim() : "";
     const slmApiKey =
       slmSource === "remote" ? (fd.get("slm_api_key") || "dummy").trim() : "dummy";
-    const venvDir = (fd.get("venv_dir") || "").toString().trim();
+    const vllmEnv = (fd.get("vllm_env") || "").toString().trim();
     const harnessPython = (fd.get("harness_python") || "").toString().trim();
     const body = {
       mode: (fd.get("mode") || "swe_20filter").toString(),
@@ -293,7 +293,7 @@
       cuda_visible_devices: (fd.get("cuda_visible_devices") || "0").trim(),
       run_id: (fd.get("run_id") || "").trim(),
       resume: fd.get("resume") === "1" || fd.get("resume") === "on",
-      venv_dir: venvDir,
+      vllm_env: vllmEnv,
       harness_python: harnessPython,
     };
 
@@ -303,8 +303,8 @@
       return;
     }
 
-    if (!body.venv_dir) {
-      err.textContent = "请填写 SLM / vLLM 环境路径（conda env 目录或 .venv）";
+    if (!body.vllm_env) {
+      err.textContent = "请填写 vLLM 环境路径（conda env 目录）";
       err.hidden = false;
       return;
     }
@@ -349,7 +349,7 @@
           typeof detail === "string" ? detail : JSON.stringify(detail || res.statusText)
         );
       }
-      saveEnvs(body.venv_dir, body.harness_python);
+      saveEnvs(body.vllm_env, body.harness_python);
       activeRunId = data.run_id;
       $("#progress").hidden = false;
       $("#progress-done").hidden = true;

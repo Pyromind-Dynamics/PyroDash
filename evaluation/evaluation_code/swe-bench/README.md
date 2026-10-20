@@ -13,7 +13,7 @@ Preferred via `run_use` (two envs):
 
 | Env | Install |
 |-----|---------|
-| `VENV_DIR` (vLLM / adapter) | root `requirements.txt` + `offload/offload_code/requirements.txt` |
+| `VLLM_ENV` (vLLM / adapter) | root `requirements.txt` + `offload/offload_code/requirements.txt` |
 | `HARNESS_PYTHON` (swebench) | this folder’s `requirements.txt` (`swebench`, `mini-swe-agent`, `docker`) |
 
 ## Usage

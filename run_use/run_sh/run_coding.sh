@@ -19,7 +19,7 @@ source "${RUN_USE_ROOT}/env_paths.sh"
 
 # =========================
 # Edit this block (or export env vars before running)
-# Python envs: set VENV_DIR + HARNESS_PYTHON (web UI does this). No machine defaults.
+# Python envs: set VLLM_ENV + HARNESS_PYTHON (web UI does this). No machine defaults.
 # =========================
 
 MODE="${MODE:-swe_20filter}"
@@ -62,11 +62,11 @@ TB_DATASET="${TB_DATASET:-terminal-bench/terminal-bench-2-1}"
 
 RUN_ID="${RUN_ID:-${MODE}_$(date '+%Y%m%d_%H%M%S')}"
 
-if [[ -z "${VENV_DIR:-}" ]]; then
-  echo "[run ERROR] VENV_DIR unset. Set SLM/vLLM env in the web UI or export VENV_DIR=..." >&2
+if [[ -z "${VLLM_ENV:-}" ]]; then
+  echo "[run ERROR] VLLM_ENV unset. Set vLLM env in the web UI or export VLLM_ENV=..." >&2
   exit 1
 fi
-pyrodash_activate_venv "${VENV_DIR}" || exit 1
+pyrodash_activate_vllm_env "${VLLM_ENV}" || exit 1
 
 case "${MODE}" in
   swe|swe_20filter)
@@ -240,7 +240,7 @@ export CUDA_VISIBLE_DEVICES
 export SLM_BACKEND SLM_PORT VLLM_PORT MAX_MODEL_LEN
 export ADAPTER_HOST ADAPTER_PORT OFFLOAD_MODE USE_LLM PYTHON_BIN
 export WORKERS HARNESS_WORKERS STEP_LIMIT
-export VENV_DIR VLLM_BIN VLLM_CONDA_PREFIX VIRTUAL_ENV PATH
+export VLLM_ENV VLLM_BIN VLLM_CONDA_PREFIX VIRTUAL_ENV PATH
 # HARNESS_PYTHON may be empty for deepswe/terminal
 export HARNESS_PYTHON="${HARNESS_PYTHON:-}"
 export OFFLOAD_LOG_DIR="${LOG_DIR}"

@@ -26,38 +26,38 @@ ROUTER：`tag` / `entropy`（需 LLM）或 **`slm_only`**（仅小模型，不�
 ```bash
 cd /path/to/PyroDash
 
-# 必填：VENV_DIR（SLM/vLLM）+ HARNESS_PYTHON（SWE harness；deepswe/terminal 可省略）
+# 必填：VLLM_ENV（vLLM 环境）+ HARNESS_PYTHON（SWE harness；deepswe/terminal 可省略）
 # 20filter（或 bash run_use/run_sh/run_swe_20filter.sh）
-VENV_DIR=/path/to/vllm_env HARNESS_PYTHON=/path/to/swe_env \
+VLLM_ENV=/path/to/vllm_env HARNESS_PYTHON=/path/to/swe_env \
 MODE=swe_20filter MODEL_PATH=/path/to/ckpt \
 LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash run_use/run_sh/run_coding.sh
 
 # 上海集群（美区默认不用加）
-VENV_DIR=... HARNESS_PYTHON=... CLUSTER=shanghai MODE=swe_20filter MODEL_PATH=/path/to/ckpt \
+VLLM_ENV=... HARNESS_PYTHON=... CLUSTER=shanghai MODE=swe_20filter MODEL_PATH=/path/to/ckpt \
 LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash run_use/run_sh/run_coding.sh
 
 # 全量 SWE
-VENV_DIR=... HARNESS_PYTHON=... MODE=swe MODEL_PATH=... LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+VLLM_ENV=... HARNESS_PYTHON=... MODE=swe MODEL_PATH=... LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash run_use/run_sh/run_coding.sh
 
 # DeepSWE
-VENV_DIR=... MODE=deepswe DEEPSWE_TASKS=/path/to/deep-swe/tasks \
+VLLM_ENV=... MODE=deepswe DEEPSWE_TASKS=/path/to/deep-swe/tasks \
 MODEL_PATH=... LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash run_use/run_sh/run_coding.sh
 
 # Terminal-Bench
-VENV_DIR=... MODE=terminal N_TASKS=1 MODEL_PATH=... LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
+VLLM_ENV=... MODE=terminal N_TASKS=1 MODEL_PATH=... LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash run_use/run_sh/run_coding.sh
 
 # Resume 同名 run（SWE 跳过 preds.json 已有题）
-VENV_DIR=... HARNESS_PYTHON=... MODE=swe_20filter RUN_ID=my_run RESUME=1 MODEL_PATH=... \
+VLLM_ENV=... HARNESS_PYTHON=... MODE=swe_20filter RUN_ID=my_run RESUME=1 MODEL_PATH=... \
 LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash run_use/run_sh/run_coding.sh
 
 # 本地用 SGLang 起小模型（需已安装 sglang）
-VENV_DIR=... HARNESS_PYTHON=... MODE=swe_20filter SLM_BACKEND=sglang SLM_PORT=8007 MODEL_PATH=... \
+VLLM_ENV=... HARNESS_PYTHON=... MODE=swe_20filter SLM_BACKEND=sglang SLM_PORT=8007 MODEL_PATH=... \
 LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
   bash run_use/run_sh/run_coding.sh
 ```
@@ -66,7 +66,7 @@ LLM_BASE_URL=... LLM_API_KEY=... LLM_MODEL=... \
 
 | 用途 | 覆盖变量 |
 |------|----------|
-| vLLM / adapter / pipeline | `VENV_DIR`（网页「SLM / vLLM 环境」） |
+| vLLM / adapter / pipeline | `VLLM_ENV`（网页「vLLM 环境」） |
 | SWE harness + mini-extra | `HARNESS_PYTHON`（网页「SWE harness 环境」） |
 
 逻辑在 [`env_paths.sh`](env_paths.sh)；`offload/` / `evaluation/` 只消费已导出的 `PYTHON_BIN` / `VLLM_BIN` / `HARNESS_PYTHON`，不自行选环境。
