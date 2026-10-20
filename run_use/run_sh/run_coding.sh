@@ -316,7 +316,7 @@ export PYTHONPATH="${PYTHONPATH:-}"
     sleep 15
     [[ -f "${STATUS_FILE}" ]] || continue
     "${PYTHON_BIN}" - "${STATUS_FILE}" "${EVAL_OUT}" "${MODE}" <<'PY' || true
-import json, sys, time
+import json, re, sys, time
 from pathlib import Path
 status_path, eval_out, mode = sys.argv[1:4]
 p = Path(status_path)
@@ -338,7 +338,26 @@ if preds.is_file():
         pass
 if not done and runs.is_dir():
     done = sorted(x.name for x in runs.iterdir() if x.is_dir())
-total = 20 if mode == "swe_20filter" else None
+planned = None
+pat = re.compile(r"Running on (\d+) instances")
+for log_path in (
+    Path(eval_out).parent / "logs" / "eval.log",
+    runs / "minisweagent.log",
+):
+    if not log_path.is_file():
+        continue
+    try:
+        text = log_path.read_text(errors="replace")
+    except OSError:
+        continue
+    for match in pat.finditer(text):
+        planned = int(match.group(1))
+if planned:
+    total = planned
+elif mode == "swe_20filter":
+    total = 20
+else:
+    total = None
 data["progress"] = {
     "done": len(done),
     "total": total,

@@ -14,6 +14,8 @@
   let activeLogKey = "live";
   let previewRunId = null;
   let previewCache = { path: "", text: "", trajData: null };
+  let fileTreeTimer = null;
+  let openFileKey = "";
   let trajViewMode = "chat"; // chat | json
   let leaderboardMode = "swe_20filter";
 
@@ -430,7 +432,7 @@
     pollTimer = setInterval(() => pollOnce(runId), 1000);
   }
 
-  function renderInstanceProgress(progress) {
+  function renderInstanceProgress(progress, phase) {
     const box = $("#instance-progress");
     if (!box) return;
     if (!progress || (!progress.done && !progress.total && !progress.label)) {
@@ -441,13 +443,17 @@
     $("#instance-progress-label").textContent = progress.label || `${progress.done || 0} done`;
     const done = Number(progress.done) || 0;
     const total = progress.total != null ? Number(progress.total) : null;
+    const finished = phase === "done" || phase === "stopped" || phase === "failed";
     let pct = "";
     let width = 0;
     if (total && total > 0) {
       width = Math.min(100, Math.round((done / total) * 100));
       pct = `${width}%`;
+    } else if (done > 0 && finished) {
+      width = 100;
+      pct = "100%";
     } else if (done > 0) {
-      width = Math.min(100, 8 + done * 4);
+      width = Math.min(96, 8 + done * 4);
       pct = `${done} done`;
     }
     $("#instance-progress-pct").textContent = pct;
@@ -472,7 +478,7 @@
       $("#progress-message").textContent = [mode, data.status?.message || ""]
         .filter(Boolean)
         .join(" · ");
-      renderInstanceProgress(data.progress);
+      renderInstanceProgress(data.progress, phase);
       const stopBtn = $("#btn-stop");
       if (stopBtn && stopBtn.dataset.runId === runId) {
         stopBtn.hidden = !isRunningPhase(phase);
@@ -615,26 +621,45 @@
     return root;
   }
 
-  function renderFileTree(container, tree, runId) {
+  function captureTreeState(container) {
+    const collapsed = new Set();
+    const known = new Set();
+    container.querySelectorAll(".tree-dir").forEach((el) => {
+      const dirPath = el.dataset.dir;
+      if (!dirPath) return;
+      known.add(dirPath);
+      if (el.classList.contains("collapsed")) collapsed.add(dirPath);
+    });
+    const active =
+      container.querySelector(".tree-file .tree-row.active")?.dataset.path ||
+      previewCache.path ||
+      "";
+    return { collapsed, known, active };
+  }
+
+  function renderFileTree(container, tree, runId, state) {
     container.innerHTML = "";
     if (!tree || (!Object.keys(tree.children).length && !tree.files.length)) {
       container.innerHTML = '<p class="muted">无文件</p>';
       return;
     }
 
-    function renderNode(node, parentEl, depth) {
+    function renderNode(node, parentEl, depth, prefix) {
       const dirNames = Object.keys(node.children).sort();
       for (const name of dirNames) {
         const child = node.children[name];
+        const dirPath = prefix ? `${prefix}/${name}` : name;
         const dirEl = document.createElement("div");
         dirEl.className = "tree-dir";
-        // Expand top 2 levels by default
-        if (depth >= 2) dirEl.classList.add("collapsed");
+        dirEl.dataset.dir = dirPath;
+        const known = Boolean(state && state.known && state.known.has(dirPath));
+        const collapsed = known ? state.collapsed.has(dirPath) : depth >= 2;
+        if (collapsed) dirEl.classList.add("collapsed");
 
         const row = document.createElement("button");
         row.type = "button";
         row.className = "tree-row";
-        row.innerHTML = `<span class="tree-twist">${depth >= 2 ? "▸" : "▾"}</span><span class="tree-icon">📁</span><span class="tree-name">${escapeHtml(name)}</span>`;
+        row.innerHTML = `<span class="tree-twist">${collapsed ? "▸" : "▾"}</span><span class="tree-icon">📁</span><span class="tree-name">${escapeHtml(name)}</span>`;
         row.addEventListener("click", (e) => {
           e.stopPropagation();
           dirEl.classList.toggle("collapsed");
@@ -647,7 +672,7 @@
         kids.className = "tree-children";
         dirEl.appendChild(kids);
         parentEl.appendChild(dirEl);
-        renderNode(child, kids, depth + 1);
+        renderNode(child, kids, depth + 1, dirPath);
       }
 
       const files = [...node.files].sort((a, b) => a.name.localeCompare(b.name));
@@ -661,6 +686,7 @@
         row.dataset.path = f.path;
         const icon = f.name.endsWith(".traj.json") ? "💬" : "📄";
         row.innerHTML = `<span class="tree-twist"></span><span class="tree-icon">${icon}</span><span class="tree-name">${escapeHtml(f.name)}</span>`;
+        if (state && state.active && f.path === state.active) row.classList.add("active");
         row.addEventListener("click", () => {
           $$("#file-tree .tree-row.active").forEach((b) => b.classList.remove("active"));
           row.classList.add("active");
@@ -671,7 +697,7 @@
       }
     }
 
-    renderNode(tree, container, 0);
+    renderNode(tree, container, 0, "");
   }
 
   function renderMetricsSummary(st, metrics, metricsRow) {
@@ -715,9 +741,63 @@
     return `<div class="run-meta-line">${meta}</div>${rowHtml}`;
   }
 
+  function stopFileTreeRefresh() {
+    if (fileTreeTimer) {
+      clearInterval(fileTreeTimer);
+      fileTreeTimer = null;
+    }
+  }
+
+  async function loadRunFiles(runId, resetPreview) {
+    if (resetPreview) {
+      previewCache = { path: "", text: "", trajData: null };
+      openFileKey = "";
+      $("#result-summary").textContent = "加载中…";
+      $("#file-tree").innerHTML = "";
+      $("#preview-path").textContent = "点击左侧文件预览";
+      $("#traj-view-toggle").hidden = true;
+      $("#preview-body").innerHTML =
+        '<p class="muted">左侧按文件夹选文件；轨迹可在「format / JSON」间切换。</p>';
+    }
+    const res = await fetch(apiUrl(`/api/runs/${encodeURIComponent(runId)}/results`));
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "failed");
+    const st = data.status || {};
+    const metrics = data.metrics || {};
+    if (st.mode && ["swe_20filter", "swe", "terminal", "deepswe"].includes(st.mode)) {
+      leaderboardMode = st.mode;
+    }
+    const files = data.files || [];
+    const key = files.join("\n");
+    const treeState = resetPreview ? null : captureTreeState($("#file-tree"));
+    $("#result-summary").innerHTML = renderMetricsSummary(st, metrics, data.metrics_row);
+    if (resetPreview || key !== openFileKey) {
+      openFileKey = key;
+      renderFileTree($("#file-tree"), pathsToTree(files), runId, treeState);
+    }
+    return st.phase || "";
+  }
+
+  function watchFileTree(runId, phase) {
+    stopFileTreeRefresh();
+    if (!isRunningPhase(phase)) return;
+    fileTreeTimer = setInterval(async () => {
+      if (previewRunId !== runId) {
+        stopFileTreeRefresh();
+        return;
+      }
+      try {
+        const phaseNow = await loadRunFiles(runId, false);
+        if (!isRunningPhase(phaseNow)) stopFileTreeRefresh();
+      } catch (_) {
+        /* 下一次再试，不清掉当前预览 */
+      }
+    }, 3000);
+  }
+
   async function showResults(runId) {
     previewRunId = runId;
-    previewCache = { path: "", text: "", trajData: null };
+    stopFileTreeRefresh();
     $$("#run-list li").forEach((li) => {
       li.classList.toggle("active", li.dataset.runId === runId);
     });
@@ -726,23 +806,9 @@
       title.textContent = runId;
       title.classList.remove("muted");
     }
-    $("#result-summary").textContent = "加载中…";
-    $("#file-tree").innerHTML = "";
-    $("#preview-path").textContent = "点击左侧文件预览";
-    $("#traj-view-toggle").hidden = true;
-    $("#preview-body").innerHTML =
-      '<p class="muted">左侧按文件夹选文件；轨迹可在「format / JSON」间切换。</p>';
     try {
-      const res = await fetch(apiUrl(`/api/runs/${encodeURIComponent(runId)}/results`));
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "failed");
-      const st = data.status || {};
-      const metrics = data.metrics || {};
-      if (st.mode && ["swe_20filter", "swe", "terminal", "deepswe"].includes(st.mode)) {
-        leaderboardMode = st.mode;
-      }
-      $("#result-summary").innerHTML = renderMetricsSummary(st, metrics, data.metrics_row);
-      renderFileTree($("#file-tree"), pathsToTree(data.files || []), runId);
+      const phase = await loadRunFiles(runId, true);
+      watchFileTree(runId, phase);
     } catch (ex) {
       $("#result-summary").innerHTML = `<span class="error">${escapeHtml(String(ex))}</span>`;
     }

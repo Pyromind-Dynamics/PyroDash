@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -332,6 +333,26 @@ def _parse_harbor(eval_dir: Path) -> dict[str, Any]:
     return summary
 
 
+_RUNNING_ON = re.compile(r"Running on (\d+) instances")
+
+
+def _planned_instance_count(run_dir: Path) -> Optional[int]:
+    """Instances mini-extra actually scheduled, e.g. after --slice 0:1."""
+    candidates = [run_dir / "logs" / "eval.log"]
+    candidates.extend(run_dir.glob("*/runs/minisweagent.log"))
+    found: Optional[int] = None
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        for match in _RUNNING_ON.finditer(text):
+            found = int(match.group(1))
+    return found
+
+
 def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> dict[str, Any]:
     """Compute one leaderboard-style metrics dict for a run_use output dir."""
     status = _read_json(run_dir / "status.json") or {}
@@ -355,8 +376,10 @@ def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> d
     }
 
     expected = MODE_EXPECTED_TOTAL.get(mode)
+    planned = _planned_instance_count(run_dir)
     resolved: Optional[int] = None
-    total: Optional[int] = expected
+    # Prefer the count mini-extra scheduled (slice/filter) over the full benchmark size.
+    total: Optional[int] = planned if planned is not None else expected
     reward_mean: Optional[float] = None
 
     if eval_dir is not None:
@@ -364,10 +387,12 @@ def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> d
             h = _parse_harness(eval_dir, run_dir=run_dir)
             if h.get("resolved") is not None:
                 resolved = int(h["resolved"])
-            # Actual run size: preds count > harness submitted > mode expected.
+            # Actual run size: scheduled count > preds count > harness submitted > mode expected.
             # Never use report total_instances (full SWE-bench Verified = 500).
             pred_resolved, pred_n = _resolved_from_preds(eval_dir)
-            if pred_n is not None:
+            if planned is not None:
+                total = planned
+            elif pred_n is not None:
                 total = pred_n
             elif h.get("total") is not None:
                 total = int(h["total"])

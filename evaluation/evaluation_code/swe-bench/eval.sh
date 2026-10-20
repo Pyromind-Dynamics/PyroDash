@@ -294,6 +294,40 @@ do
   done
 done
 
+# swebench writes logs/run_evaluation/<run_id>/<model>/<instance>/.
+# Keep one folder per instance directly under verified/.
+flatten_verified_instances() {
+  local root="$1"
+  local nest="${root}/logs/run_evaluation"
+  [[ -d "${nest}" ]] || return 0
+  local run_dir model_dir inst_dir name dest
+  shopt -s nullglob
+  for run_dir in "${nest}"/*; do
+    [[ -d "${run_dir}" ]] || continue
+    for model_dir in "${run_dir}"/*; do
+      [[ -d "${model_dir}" ]] || continue
+      for inst_dir in "${model_dir}"/*; do
+        [[ -d "${inst_dir}" ]] || continue
+        name="$(basename "${inst_dir}")"
+        dest="${root}/${name}"
+        mkdir -p "${dest}"
+        shopt -s dotglob
+        local -a items=("${inst_dir}"/*)
+        if [[ ${#items[@]} -gt 0 ]]; then
+          mv -f "${items[@]}" "${dest}/"
+        fi
+        shopt -u dotglob
+        rm -rf "${inst_dir}"
+        echo "[eval] flattened instance → ${dest}"
+      done
+    done
+  done
+  shopt -u nullglob
+  rm -rf "${root}/logs"
+}
+
+flatten_verified_instances "${EVAL_DIR}"
+
 echo "[eval] done"
 echo "[eval] preds : ${PREDS}"
 echo "[eval] report: ${EVAL_DIR}"

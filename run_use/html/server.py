@@ -28,6 +28,7 @@ SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 SUPPORTED_MODES = ("swe", "swe_20filter", "deepswe", "terminal")
 
 from metrics import (  # noqa: E402
+    _planned_instance_count,
     compute_run_metrics,
     format_metrics_row,
     parse_leaderboard,
@@ -444,8 +445,13 @@ def _compute_progress(run_dir: Path, status: dict[str, Any]) -> dict[str, Any]:
             done_ids = sorted(p.name for p in runs.iterdir() if p.is_dir())
         progress["done"] = len(done_ids)
         progress["completed"] = done_ids
-        if mode == "swe_20filter":
+        planned = _planned_instance_count(run_dir)
+        if planned:
+            progress["total"] = planned
+        elif mode == "swe_20filter":
             progress["total"] = SWE20_EXPECTED
+        elif status.get("phase") in ("done", "stopped", "failed") and progress["done"]:
+            progress["total"] = progress["done"]
         progress["label"] = (
             f"{progress['done']}/{progress['total']} instances done"
             if progress["total"]
