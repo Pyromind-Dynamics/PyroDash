@@ -18,8 +18,8 @@ PYRODASH_ROOT="$(cd "${RUN_USE_ROOT}/.." && pwd)"
 source "${RUN_USE_ROOT}/env_paths.sh"
 
 # =========================
-# Edit this block (or export env vars before running)
-# Python envs: set VLLM_ENV + HARNESS_PYTHON (web UI does this). No machine defaults.
+# Edit this block (or export env vars before running).
+# Python envs default to the two lines at the top of run_use/env_paths.sh.
 # =========================
 
 MODE="${MODE:-swe_20filter}"
