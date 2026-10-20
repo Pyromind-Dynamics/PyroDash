@@ -26,11 +26,14 @@ _installed = False
 _START = ">>>>> Start Test Output"
 _END = ">>>>> End Test Output"
 
-# docker-rt ignores exec -e / PATH; relink bare python → testbed (same as
-# docker_rt_testbed_exec.sh). Keep free of `#` / `name()` — not needed here
-# because this string is assembled in Python, not parsed by docker-rt first.
-_TB_PY = "/opt/miniconda3/envs/testbed/bin/python"
+# docker-rt ignores exec -e / PATH; conda activate often leaves PATH on base
+# conda only, so ``pytest`` is missing. Prepend testbed/bin and relink bare
+# python → testbed (same as docker_rt_testbed_exec.sh). Keep free of `#` /
+# `name()` — this string is assembled in Python, not parsed by docker-rt first.
+_TB_BIN = "/opt/miniconda3/envs/testbed/bin"
+_TB_PY = f"{_TB_BIN}/python"
 _LN_PREFIX = (
+    f"export PATH={_TB_BIN}:$PATH; "
     f"ln -sfn {_TB_PY} /opt/miniconda3/bin/python; "
     f"ln -sfn {_TB_PY} /opt/miniconda3/bin/python3; "
     f"ln -sfn {_TB_PY} /opt/miniconda3/bin/python3.9; "
@@ -42,7 +45,11 @@ _LN_PREFIX = (
 
 
 def fix_eval_script_markers(script: str) -> str:
-    """Send harness markers to stdout (not stderr via set -x)."""
+    """Send harness markers to stdout (not stderr via set -x).
+
+    Also rewrite bare ``pytest`` → ``python -m pytest`` so tests still run if
+    PATH misses the testbed scripts directory.
+    """
     if not isinstance(script, str):
         return script
     out = script
@@ -50,6 +57,10 @@ def fix_eval_script_markers(script: str) -> str:
         # swebench emits: : '>>>>> Start Test Output'
         out = out.replace(f": '{marker}'", f"echo '{marker}'")
         out = out.replace(f': "{marker}"', f'echo "{marker}"')
+    # Only the eval command line (not comments): leading pytest …
+    out = out.replace("\npytest ", "\npython -m pytest ")
+    if out.startswith("pytest "):
+        out = "python -m pytest " + out[len("pytest ") :]
     return out
 
 
