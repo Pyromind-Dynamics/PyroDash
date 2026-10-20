@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=13" />
+  <link rel="stylesheet" href="styles.css?v=15" />
 </head>
 <body>
   <div class="page">
@@ -132,17 +132,20 @@
 
           <fieldset id="mode-extra" class="mode-extra">
             <legend>评测参数</legend>
-            <label class="mode-field mode-swe">
-              WORKERS（SWE）
-              <input name="workers" type="number" value="4" />
+            <label class="mode-field mode-swe full">
+              MINI_EXTRA_ARGS
+              <span class="field-hint">每行一个参数，原样传给 mini-extra swebench。只跑一题时把 --filter 改成实例 id，或换成 --slice 0:1，并把 -w 改成 1。还可加 --redo-existing、--shuffle、-c agent.cost_limit=3、-c environment.timeout=60。输出目录、模型地址和 registry 由脚本固定，不要写 -o。</span>
+              <textarea name="mini_extra_args" id="mini-extra-args" class="mono-args" rows="8" spellcheck="false">
+--subset verified
+--split test
+-w 4
+-c agent.step_limit=150
+-c environment.pull_timeout=7200
+--filter astropy__astropy-14182|astropy__astropy-14508|django__django-10999|django__django-12262|django__django-13023|django__django-14122|django__django-15268|django__django-16136|django__django-16631|matplotlib__matplotlib-26208|pydata__xarray-3677|pydata__xarray-4094|pylint-dev__pylint-6528|pytest-dev__pytest-6202|scikit-learn__scikit-learn-14894|sphinx-doc__sphinx-10449|sphinx-doc__sphinx-9591|sympy__sympy-13551|sympy__sympy-14531|sympy__sympy-17139</textarea>
             </label>
             <label class="mode-field mode-swe">
-              HARNESS_WORKERS
+              HARNESS_WORKERS（打分，不是 mini-extra）
               <input name="harness_workers" type="number" value="8" />
-            </label>
-            <label class="mode-field mode-swe">
-              STEP_LIMIT（最大轮次）
-              <input name="step_limit" id="step-limit" type="number" value="150" min="1" />
             </label>
             <label class="mode-field mode-agent">
               N_CONCURRENT
@@ -199,13 +202,23 @@
                 <div class="slm-advanced-grid">
                   <label class="backend-vllm full">
                     VLLM_EXTRA_ARGS
-                    <span class="field-hint">例如需要限长时自行加上：--max-model-len 128000</span>
-                    <textarea name="vllm_extra_args" id="vllm-extra-args" rows="3" spellcheck="false">--gpu-memory-utilization 0.90 --tensor-parallel-size 1 --trust-remote-code --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder</textarea>
+                    <span class="field-hint">每个 --flag 单独一行。需要限长时自行加上一行：--max-model-len 128000</span>
+                    <textarea name="vllm_extra_args" id="vllm-extra-args" class="mono-args" rows="7" spellcheck="false">
+--gpu-memory-utilization 0.90
+--tensor-parallel-size 1
+--trust-remote-code
+--reasoning-parser qwen3
+--enable-auto-tool-choice
+--tool-call-parser qwen3_coder</textarea>
                   </label>
                   <label class="backend-sglang full">
                     SGLANG_EXTRA_ARGS
-                    <span class="field-hint">例如需要限长时自行加上：--context-length 128000</span>
-                    <textarea name="sglang_extra_args" id="sglang-extra-args" rows="3" spellcheck="false">--tp 1 --mem-fraction-static 0.90 --tool-call-parser qwen3_coder --reasoning-parser qwen3</textarea>
+                    <span class="field-hint">每个 --flag 单独一行。需要限长时自行加上一行：--context-length 128000</span>
+                    <textarea name="sglang_extra_args" id="sglang-extra-args" class="mono-args" rows="5" spellcheck="false">
+--tp 1
+--mem-fraction-static 0.90
+--tool-call-parser qwen3_coder
+--reasoning-parser qwen3</textarea>
                   </label>
                 </div>
               </details>
@@ -257,6 +270,7 @@
             <span class="phase-label">phase</span>
             <span id="progress-phase" class="phase-badge">—</span>
             <span id="progress-message" class="muted"></span>
+            <button type="button" class="btn danger small" id="btn-stop" hidden>停止本次运行</button>
           </div>
           <div id="instance-progress" class="instance-progress" hidden>
             <div class="instance-progress-meta">
@@ -347,6 +361,6 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>

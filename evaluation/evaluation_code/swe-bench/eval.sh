@@ -71,6 +71,10 @@ Options:
 
 Env overrides:
   EVAL_OUTPUT_DIR      if set, write runs/ and verified/ under this directory
+  MINI_EXTRA_ARGS      extra mini-extra argv, one flag per line. When set, replaces
+                       SUBSET / SPLIT / WORKERS / STEP_LIMIT / pull_timeout.
+                       --filter or --slice here also replaces INSTANCE_FILTER.
+                       -o / --output is ignored; output dir stays fixed.
   INSTANCE_FILTER      if set, pass --filter to mini-extra (e.g. swe_20filter ids)
   SUBSET               mini-extra subset (default: verified)
   SPLIT                mini-extra split (default: test)
@@ -148,14 +152,70 @@ MINI_ARGS=(
   -c "${MODEL_YAML}"
   -c "${ENV_TESTBED_YAML}"
   -c "model.litellm_model_registry=${REGISTRY_ABS}"
-  -c "environment.pull_timeout=7200"
-  -c "agent.step_limit=${STEP_LIMIT}"
-  --subset "${SUBSET}"
-  --split "${SPLIT}"
-  "${FILTER_ARGS[@]}"
-  -w "${WORKERS}"
-  -o "${OUT_DIR}"
 )
+
+USER_MINI=()
+_mini_extra="${MINI_EXTRA_ARGS:-}"
+if [[ -n "${_mini_extra//[[:space:]]/}" ]]; then
+  _argfile="$(mktemp)"
+  "${PYTHON_BIN}" -c 'import os, shlex, sys
+args = shlex.split(os.environ.get("MINI_EXTRA_ARGS", ""))
+data = b"\0".join(arg.encode() for arg in args)
+if args:
+    data += b"\0"
+sys.stdout.buffer.write(data)
+' >"${_argfile}"
+  while IFS= read -r -d '' _arg; do
+    [[ -n "${_arg}" ]] || continue
+    USER_MINI+=("${_arg}")
+  done < "${_argfile}"
+  rm -f "${_argfile}"
+  KEPT_MINI=()
+  _skip_next=0
+  for _arg in "${USER_MINI[@]}"; do
+    if [[ "${_skip_next}" == "1" ]]; then
+      _skip_next=0
+      echo "[eval] ignoring user output path: ${_arg}"
+      continue
+    fi
+    case "${_arg}" in
+      -o|--output)
+        _skip_next=1
+        echo "[eval] ignoring user ${_arg} (output dir is fixed at ${OUT_DIR})"
+        continue
+        ;;
+      --output=*)
+        echo "[eval] ignoring user ${_arg} (output dir is fixed at ${OUT_DIR})"
+        continue
+        ;;
+    esac
+    KEPT_MINI+=("${_arg}")
+  done
+  MINI_ARGS+=("${KEPT_MINI[@]}")
+  _user_has_selector=0
+  for _arg in "${KEPT_MINI[@]}"; do
+    case "${_arg}" in
+      --filter|--slice|--filter=*|--slice=*) _user_has_selector=1 ;;
+    esac
+  done
+  if [[ "${_user_has_selector}" == "0" && ${#FILTER_ARGS[@]} -gt 0 ]]; then
+    MINI_ARGS+=("${FILTER_ARGS[@]}")
+    echo "[eval] MINI_EXTRA_ARGS has no --filter/--slice; still applying INSTANCE_FILTER"
+  fi
+  echo "[eval] using MINI_EXTRA_ARGS (SUBSET/SPLIT/WORKERS/STEP_LIMIT defaults skipped)"
+else
+  MINI_ARGS+=(
+    -c "environment.pull_timeout=7200"
+    -c "agent.step_limit=${STEP_LIMIT}"
+    --subset "${SUBSET}"
+    --split "${SPLIT}"
+    "${FILTER_ARGS[@]}"
+    -w "${WORKERS}"
+  )
+fi
+MINI_ARGS+=(-o "${OUT_DIR}")
+echo "[eval] mini-extra argv:"
+printf '  %q\n' "${MINI_ARGS[@]}"
 
 if [[ "${CLUSTER}" == "shanghai" ]]; then
   # Aliyun images + docker-rt. Keep bash -lc (do not install docker_rt_testbed_exec.sh).

@@ -78,7 +78,7 @@ cd run_use/html
 python server.py   # http://0.0.0.0:8787/
 ```
 
-页面 MODE 下拉可选四种；**Python 环境**填 SLM/vLLM 与 SWE harness 两套路径（支持 conda env 目录或 `.../bin/python`，下拉可从本机扫描建议）。`deepswe` / `terminal` 会显示各自参数。进度默认 **live** 日志。`RUN_ID` 空=新建；续跑需填已有 id 并勾选 **resume**。
+页面 MODE 下拉可选四种；**Python 环境**填 SLM/vLLM 与 SWE harness 两套路径（支持 conda env 目录或 `.../bin/python`，下拉可从本机扫描建议）。SWE 的 `MINI_EXTRA_ARGS`、vLLM / SGLang 引擎参数都是一行一个 `--flag`，只跑一题时改 `--filter` 和 `-w`。`deepswe` / `terminal` 会显示各自参数。每次运行放在独立 tmux 会话 `pyrodash_<RUN_ID>` 里，网页或终端断开不会把它杀掉；跑完或失败后会话自动关闭。进度条和左侧运行列表可以 **停止本次运行**。进度默认 **live** 日志。`RUN_ID` 空=新建；续跑需填已有 id 并勾选 **resume**。
 
 ## 布局
 

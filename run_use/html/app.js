@@ -24,11 +24,36 @@
     document.querySelector(".page")?.classList.toggle("page-wide", wide);
   }
 
+  const SWE20_FILTER =
+    "astropy__astropy-14182|astropy__astropy-14508|django__django-10999|django__django-12262|django__django-13023|django__django-14122|django__django-15268|django__django-16136|django__django-16631|matplotlib__matplotlib-26208|pydata__xarray-3677|pydata__xarray-4094|pylint-dev__pylint-6528|pytest-dev__pytest-6202|scikit-learn__scikit-learn-14894|sphinx-doc__sphinx-10449|sphinx-doc__sphinx-9591|sympy__sympy-13551|sympy__sympy-14531|sympy__sympy-17139";
+  const SWE20_FILTER_LINE = `--filter ${SWE20_FILTER}`;
+
+  function syncMiniExtraFilter() {
+    const box = $("#mini-extra-args");
+    if (!box) return;
+    const mode = $("#mode-select")?.value || "swe_20filter";
+    const lines = box.value.replace(/\r\n/g, "\n").split("\n");
+    const isSelector = (line) => {
+      const text = line.trim();
+      return text.startsWith("--filter") || text.startsWith("--slice");
+    };
+    if (mode === "swe") {
+      const next = lines.filter((line) => line.trim() !== SWE20_FILTER_LINE);
+      box.value = next.join("\n").replace(/\n+$/, "");
+      return;
+    }
+    if (mode === "swe_20filter" && !lines.some(isSelector)) {
+      const body = box.value.replace(/\s+$/, "");
+      box.value = body ? `${body}\n${SWE20_FILTER_LINE}` : SWE20_FILTER_LINE;
+    }
+  }
+
   function syncModeFields() {
     const mode = $("#mode-select")?.value || "swe_20filter";
     const isSwe = mode === "swe" || mode === "swe_20filter";
     const isDeep = mode === "deepswe";
     const isTerm = mode === "terminal";
+    syncMiniExtraFilter();
     $$(".mode-swe").forEach((el) => {
       el.hidden = !isSwe;
     });
@@ -192,6 +217,7 @@
   }
 
   $("#mode-select")?.addEventListener("change", syncModeFields);
+  $("#btn-stop")?.addEventListener("click", () => stopRun($("#btn-stop")?.dataset.runId || activeRunId));
   $("#router-select")?.addEventListener("change", syncRouterFields);
   $("#offload-mode-select")?.addEventListener("change", syncRouterHelp);
   $$('input[name="slm_source"]').forEach((el) => {
@@ -283,6 +309,7 @@
       vllm_port: Number(fd.get("slm_port") || fd.get("vllm_port") || 8007),
       vllm_extra_args: (fd.get("vllm_extra_args") || "").toString().trim(),
       sglang_extra_args: (fd.get("sglang_extra_args") || "").toString().trim(),
+      mini_extra_args: (fd.get("mini_extra_args") || "").toString().trim(),
       workers: Number(fd.get("workers") || 4),
       harness_workers: Number(fd.get("harness_workers") || 8),
       step_limit: Number(fd.get("step_limit") || 150),
@@ -369,10 +396,36 @@
     }
   });
 
+  function isRunningPhase(phase) {
+    return phase === "starting_adapter" || phase === "evaluating";
+  }
+
+  async function stopRun(runId) {
+    if (!runId) return;
+    if (!window.confirm(`停止 ${runId}？已完成的题目会保留，之后可以 resume。`)) return;
+    const res = await fetch(apiUrl(`/api/runs/${encodeURIComponent(runId)}/stop`), {
+      method: "POST",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = data.detail;
+      window.alert(typeof detail === "string" ? detail : JSON.stringify(detail || res.statusText));
+      return;
+    }
+    if (activeRunId === runId) pollOnce(runId);
+    loadHistory();
+  }
+
   function startPolling(runId) {
     if (pollTimer) clearInterval(pollTimer);
     activeLogKey = "live";
     $$(".log-tab").forEach((t) => t.classList.toggle("active", t.dataset.log === "live"));
+    const stopBtn = $("#btn-stop");
+    if (stopBtn) {
+      stopBtn.hidden = false;
+      stopBtn.disabled = false;
+      stopBtn.dataset.runId = runId;
+    }
     pollOnce(runId);
     pollTimer = setInterval(() => pollOnce(runId), 1000);
   }
@@ -420,6 +473,10 @@
         .filter(Boolean)
         .join(" · ");
       renderInstanceProgress(data.progress);
+      const stopBtn = $("#btn-stop");
+      if (stopBtn && stopBtn.dataset.runId === runId) {
+        stopBtn.hidden = !isRunningPhase(phase);
+      }
 
       const logText = (data.logs && data.logs[activeLogKey]) || "";
       const pre = $("#progress-log");
@@ -427,8 +484,16 @@
       pre.textContent = logText || "(empty)";
       if (atBottom) pre.scrollTop = pre.scrollHeight;
 
-      if (phase === "done" || phase === "failed") {
-        $("#progress-done").hidden = false;
+      if (phase === "done" || phase === "failed" || phase === "stopped") {
+        const doneBox = $("#progress-done");
+        doneBox.hidden = false;
+        const doneText = doneBox.querySelector("p");
+        if (doneText) {
+          doneText.textContent =
+            phase === "stopped"
+              ? "已停止。已完成的题目还在，勾选 resume 并填写同一个 RUN_ID 可以续跑。"
+              : "评测结束。可在「历史结果」查看摘要与文件。";
+        }
         if (pollTimer) {
           clearInterval(pollTimer);
           pollTimer = null;
@@ -508,12 +573,20 @@
         const li = document.createElement("li");
         li.dataset.runId = r.run_id;
         if (previewRunId && previewRunId === r.run_id) li.classList.add("active");
+        const stopBtn = isRunningPhase(r.phase)
+          ? `<button type="button" class="btn danger small" data-stop="${escapeHtml(r.run_id)}">停止</button>`
+          : "";
         li.innerHTML = `
           <span class="id">${escapeHtml(r.run_id)}</span>
           <span class="phase-badge ${escapeHtml(r.phase || "")}">${escapeHtml(r.phase || "—")}</span>
           <span class="meta">${escapeHtml(r.mode || "")} · ${escapeHtml(r.router_mode || "")}<br>${escapeHtml(r.updated_at || "")}</span>
+          ${stopBtn}
         `;
         li.addEventListener("click", () => showResults(r.run_id));
+        li.querySelector("[data-stop]")?.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          stopRun(r.run_id);
+        });
         list.appendChild(li);
       }
     } catch (ex) {

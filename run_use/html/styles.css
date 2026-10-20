@@ -258,6 +258,17 @@ input:focus, select:focus {
   cursor: not-allowed;
 }
 
+.btn.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: transparent;
+}
+
+.btn.small {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+}
+
 .error {
   color: var(--danger);
   font-size: 0.85rem;
@@ -305,6 +316,7 @@ input:focus, select:focus {
 .phase-badge.evaluating { border-color: #5b8fc7; color: #7eb0e0; }
 .phase-badge.done { border-color: var(--ok); color: var(--ok); }
 .phase-badge.failed { border-color: var(--danger); color: var(--danger); }
+.phase-badge.stopped { border-color: var(--warn); color: var(--warn); }
 
 .muted { color: var(--muted); font-size: 0.85rem; }
 
@@ -696,7 +708,7 @@ input:focus, select:focus {
   display: none !important;
 }
 
-.slm-advanced .field-hint {
+.field-hint {
   display: block;
   font-size: 0.72rem;
   font-weight: 400;
@@ -704,7 +716,7 @@ input:focus, select:focus {
   margin: -0.1rem 0 0.15rem;
 }
 
-.slm-advanced textarea {
+.mono-args {
   font-family: var(--mono);
   font-size: 0.8rem;
   color: var(--text);
@@ -715,10 +727,12 @@ input:focus, select:focus {
   resize: vertical;
   min-height: 4.2rem;
   width: 100%;
-  line-height: 1.4;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
 }
 
-.slm-advanced textarea:focus {
+.mono-args:focus {
   outline: 1px solid var(--accent);
   border-color: var(--accent-dim);
 }

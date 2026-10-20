@@ -46,10 +46,11 @@ Token / offload stats stay on the adapter: `GET http://<host>:<port>/stats` and 
 |------------|---------|---------|
 | `--host` / `ADAPTER_HOST` | `127.0.0.1` | Adapter host |
 | `--port` / `ADAPTER_PORT` | (required) | Adapter port |
-| `SUBSET` | `verified` | mini-extra subset |
-| `SPLIT` | `test` | mini-extra split |
-| `WORKERS` | `4` | mini-extra parallelism |
-| `STEP_LIMIT` | `150` | agent step limit |
+| `MINI_EXTRA_ARGS` | (unset) | mini-extra 参数，一行一个。设置后取代下面四项；`--filter` / `--slice` 同时取代 `INSTANCE_FILTER` |
+| `SUBSET` | `verified` | mini-extra subset（`MINI_EXTRA_ARGS` 为空时） |
+| `SPLIT` | `test` | mini-extra split（`MINI_EXTRA_ARGS` 为空时） |
+| `WORKERS` | `4` | mini-extra parallelism（`MINI_EXTRA_ARGS` 为空时） |
+| `STEP_LIMIT` | `150` | agent step limit（`MINI_EXTRA_ARGS` 为空时） |
 | `HARNESS_WORKERS` | `8` | harness parallelism |
 | `DATASET_NAME` | `princeton-nlp/SWE-bench_Verified` | harness dataset |
 | `RUN_ID` | `swebench_offload_pred` | harness run id |

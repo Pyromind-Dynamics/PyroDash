@@ -138,7 +138,14 @@ case "${MODE}" in
 esac
 [[ -f "${EVAL_SH}" ]] || { echo "[run ERROR] missing ${EVAL_SH}" >&2; exit 1; }
 
-if [[ "${MODE}" == "swe_20filter" && -z "${INSTANCE_FILTER}" ]]; then
+# Web UI puts --filter / --slice inside MINI_EXTRA_ARGS. Do not also inject the 20-id list.
+mini_has_selector=0
+if [[ "${MINI_EXTRA_ARGS:-}" == *"--filter"* || "${MINI_EXTRA_ARGS:-}" == *"--slice"* ]]; then
+  mini_has_selector=1
+fi
+if [[ "${mini_has_selector}" == "1" ]]; then
+  INSTANCE_FILTER=""
+elif [[ "${MODE}" == "swe_20filter" && -z "${INSTANCE_FILTER}" ]]; then
   INSTANCE_FILTER="${SWE20_FILTER}"
 fi
 if [[ "${MODE}" == "swe" ]]; then
@@ -221,12 +228,12 @@ on_exit() {
   else
     local cur_phase=""
     cur_phase="$("${PYTHON_BIN}" -c "import json; print(json.load(open('${STATUS_FILE}')).get('phase',''))" 2>/dev/null || true)"
-    if [[ "${cur_phase}" != "done" && "${cur_phase}" != "failed" ]]; then
+    if [[ "${cur_phase}" != "done" && "${cur_phase}" != "failed" && "${cur_phase}" != "stopped" ]]; then
       write_status "failed" "pipeline exited with code ${code}"
     fi
   fi
 }
-trap on_exit EXIT INT TERM
+trap on_exit EXIT INT TERM HUP
 
 if [[ "${RESUME}" == "1" || "${RESUME}" == "true" || "${RESUME}" == "yes" ]]; then
   write_status "starting_adapter" "resuming ${ROUTER_MODE} offload adapter"
@@ -317,6 +324,8 @@ try:
     data = json.loads(p.read_text())
 except Exception:
     raise SystemExit(0)
+if data.get("phase") in ("stopped", "done", "failed"):
+    raise SystemExit(0)
 runs = Path(eval_out) / "runs"
 done = []
 preds = runs / "preds.json"
@@ -369,6 +378,7 @@ case "${MODE}" in
     WORKERS="${WORKERS}" \
     HARNESS_WORKERS="${HARNESS_WORKERS}" \
     STEP_LIMIT="${STEP_LIMIT}" \
+    MINI_EXTRA_ARGS="${MINI_EXTRA_ARGS:-}" \
     RUN_ID="${RUN_ID}_pred" \
     PYTHON_BIN="${PYTHON_BIN}" \
     HARNESS_PYTHON="${HARNESS_PYTHON}" \

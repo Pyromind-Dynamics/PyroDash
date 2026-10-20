@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
+import shutil
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -66,12 +69,21 @@ class StartRunRequest(BaseModel):
     tool_call_parser: str = "qwen3_coder"  # legacy
     reasoning_parser: str = "qwen3"  # legacy
     vllm_extra_args: str = (
-        "--gpu-memory-utilization 0.90 --tensor-parallel-size 1 --trust-remote-code "
-        "--reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder"
+        "--gpu-memory-utilization 0.90\n"
+        "--tensor-parallel-size 1\n"
+        "--trust-remote-code\n"
+        "--reasoning-parser qwen3\n"
+        "--enable-auto-tool-choice\n"
+        "--tool-call-parser qwen3_coder"
     )
     sglang_extra_args: str = (
-        "--tp 1 --mem-fraction-static 0.90 --tool-call-parser qwen3_coder --reasoning-parser qwen3"
+        "--tp 1\n"
+        "--mem-fraction-static 0.90\n"
+        "--tool-call-parser qwen3_coder\n"
+        "--reasoning-parser qwen3"
     )
+    # Empty: eval.sh keeps WORKERS / STEP_LIMIT / INSTANCE_FILTER.
+    mini_extra_args: str = ""
     offload_mode: str = "handoff"
     workers: int = 4
     harness_workers: int = 8
@@ -243,6 +255,82 @@ def _discover_conda_envs() -> list[str]:
         except OSError:
             continue
     return out
+
+
+def _tmux_session_name(run_id: str) -> str:
+    return f"pyrodash_{run_id}"
+
+
+def _tmux_socket(run_dir: Path) -> Path:
+    return run_dir / "tmux.sock"
+
+
+def _require_tmux() -> str:
+    path = shutil.which("tmux")
+    if not path:
+        raise HTTPException(
+            status_code=500,
+            detail="tmux not found. Install tmux before starting a run.",
+        )
+    return path
+
+
+def _tmux_has_session(sock: Path, session: str) -> bool:
+    tmux = shutil.which("tmux")
+    if not tmux or not sock.exists() or not session:
+        return False
+    proc = subprocess.run(
+        [tmux, "-S", str(sock), "has-session", "-t", session],
+        capture_output=True,
+        text=True,
+    )
+    return proc.returncode == 0
+
+
+def _live_pane_pid(status: dict[str, Any], run_dir: Path) -> Any:
+    """Prefer status.json pid; if that process is gone, read the tmux pane pid."""
+    pid = status.get("pid")
+    if _pid_alive(pid):
+        return pid
+    session = str(status.get("tmux_session") or "")
+    sock = _tmux_socket(run_dir)
+    tmux = shutil.which("tmux")
+    if not tmux or not session or not _tmux_has_session(sock, session):
+        return pid
+    proc = subprocess.run(
+        [tmux, "-S", str(sock), "list-panes", "-t", session, "-F", "#{pane_pid}"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if proc.returncode != 0:
+        return pid
+    lines = (proc.stdout or "").strip().splitlines()
+    if lines and lines[0].isdigit():
+        return int(lines[0])
+    return pid
+
+
+def _run_alive(status: dict[str, Any], run_dir: Path) -> bool:
+    if _pid_alive(status.get("pid")):
+        return True
+    session = str(status.get("tmux_session") or "")
+    return bool(session) and _tmux_has_session(_tmux_socket(run_dir), session)
+
+
+def _signal_group(pid: Any, sig: int) -> bool:
+    try:
+        pid_i = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid_i <= 0:
+        return False
+    try:
+        pgid = os.getpgid(pid_i)
+    except ProcessLookupError:
+        return False
+    os.killpg(pgid, sig)
+    return True
 
 
 def _pid_alive(pid: Any) -> bool:
@@ -555,10 +643,13 @@ def start_run(body: StartRunRequest) -> JSONResponse:
 
     if run_dir.exists():
         prev_status = _read_json(run_dir / "status.json")
-        if _pid_alive(prev_status.get("pid")):
+        if _run_alive(prev_status, run_dir):
             raise HTTPException(
                 status_code=409,
-                detail=f"run still running (pid={prev_status.get('pid')}): stop it before resume",
+                detail=(
+                    f"run still running (pid={prev_status.get('pid')}, "
+                    f"tmux={prev_status.get('tmux_session') or '-'}): stop it before resume"
+                ),
             )
         if not want_resume:
             raise HTTPException(
@@ -644,6 +735,10 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         env["SGLANG_EXTRA_ARGS"] = body.sglang_extra_args.strip()
     else:
         env.pop("SGLANG_EXTRA_ARGS", None)
+    if (body.mini_extra_args or "").strip():
+        env["MINI_EXTRA_ARGS"] = body.mini_extra_args.strip()
+    else:
+        env.pop("MINI_EXTRA_ARGS", None)
     n_tasks = (body.n_tasks or "").strip()
     if n_tasks:
         env["N_TASKS"] = n_tasks
@@ -659,22 +754,23 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         env.pop("MODEL_PATH", None)
 
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    tmux = _require_tmux()
+    session = _tmux_session_name(run_id)
+    sock = _tmux_socket(run_dir)
+    if _tmux_has_session(sock, session):
+        raise HTTPException(
+            status_code=409,
+            detail=f"tmux session still running: {session}",
+        )
+    if sock.exists():
+        sock.unlink()
     web_log = run_dir / "logs" / "web_launch.log"
+    action = "resuming" if resumed else "starting"
     with web_log.open("a" if resumed else "w") as logf:
-        action = "resuming" if resumed else "starting"
         logf.write(
-            f"{action} {RUN_SH} mode={body.mode} cluster={cluster} run_id={run_id}\n"
+            f"{action} {RUN_SH} mode={body.mode} cluster={cluster} "
+            f"run_id={run_id} tmux={session}\n"
         )
-        logf.flush()
-        proc = subprocess.Popen(
-            ["bash", str(RUN_SH)],
-            cwd=str(RUN_USE_ROOT),
-            env=env,
-            stdout=logf,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
-
     status = {
         **prev_status,
         "run_id": run_id,
@@ -685,15 +781,144 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         "phase": "starting_adapter",
         "message": "resuming from web UI" if resumed else "launched from web UI",
         "updated_at": now,
-        "pid": proc.pid,
+        "tmux_session": session,
+        "pid": None,
     }
     status.setdefault("started_at", now)
     status.pop("finished_at", None)
-    (run_dir / "status.json").write_text(json.dumps(status, indent=2) + "\n")
+    status_path = run_dir / "status.json"
+    status_path.write_text(json.dumps(status, indent=2) + "\n")
+
+    shell_cmd = (
+        f"exec bash {shlex.quote(str(RUN_SH))} >> {shlex.quote(str(web_log))} 2>&1"
+    )
+    launched = subprocess.run(
+        [
+            tmux,
+            "-S",
+            str(sock),
+            "new-session",
+            "-d",
+            "-s",
+            session,
+            "-c",
+            str(RUN_USE_ROOT),
+            shell_cmd,
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if launched.returncode != 0:
+        detail = (launched.stderr or launched.stdout or "tmux new-session failed").strip()
+        status["phase"] = "failed"
+        status["message"] = detail
+        status["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        status_path.write_text(json.dumps(status, indent=2) + "\n")
+        raise HTTPException(status_code=500, detail=detail)
+    subprocess.run(
+        [
+            tmux,
+            "-S",
+            str(sock),
+            "set-option",
+            "-w",
+            "-t",
+            session,
+            "remain-on-exit",
+            "off",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    pane = subprocess.run(
+        [
+            tmux,
+            "-S",
+            str(sock),
+            "list-panes",
+            "-t",
+            session,
+            "-F",
+            "#{pane_pid}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    pane_pid = None
+    if pane.returncode == 0:
+        first = (pane.stdout or "").strip().splitlines()
+        if first and first[0].isdigit():
+            pane_pid = int(first[0])
+    # Re-read so a fast script update is not replaced by the pre-launch snapshot.
+    current = _read_json(status_path) or status
+    current["tmux_session"] = session
+    current["pid"] = pane_pid
+    status_path.write_text(json.dumps(current, indent=2) + "\n")
 
     return JSONResponse(
-        {"run_id": run_id, "pid": proc.pid, "resumed": resumed, "status": status}
+        {
+            "run_id": run_id,
+            "pid": pane_pid,
+            "tmux_session": session,
+            "resumed": resumed,
+            "status": current,
+        }
     )
+
+
+@app.post("/api/runs/{run_id}/stop")
+def stop_run(run_id: str) -> dict[str, Any]:
+    """Stop one run: SIGTERM its process group, then drop the tmux session."""
+    run_dir = _run_dir(run_id)
+    status_path = run_dir / "status.json"
+    if not status_path.is_file():
+        raise HTTPException(status_code=404, detail="run not found")
+    status = _read_json(status_path)
+    alive = _run_alive(status, run_dir)
+    phase = str(status.get("phase") or "")
+    if not alive and phase not in ("starting_adapter", "evaluating"):
+        return {"run_id": run_id, "phase": phase, "stopped": False}
+
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    status["phase"] = "stopped"
+    status["message"] = "stopped from web UI"
+    status["updated_at"] = now
+    status["finished_at"] = now
+    status_path.write_text(json.dumps(status, indent=2) + "\n")
+
+    pid = _live_pane_pid(status, run_dir)
+    status["pid"] = pid
+    if _pid_alive(pid):
+        try:
+            _signal_group(pid, signal.SIGTERM)
+        except PermissionError as exc:
+            raise HTTPException(status_code=500, detail=f"cannot signal pid {pid}: {exc}") from exc
+
+    deadline = time.time() + 8
+    while time.time() < deadline and _run_alive(status, run_dir):
+        time.sleep(0.4)
+
+    if _run_alive(status, run_dir):
+        session = str(status.get("tmux_session") or "")
+        sock = _tmux_socket(run_dir)
+        tmux = shutil.which("tmux")
+        if tmux and session and sock.exists():
+            subprocess.run(
+                [tmux, "-S", str(sock), "kill-session", "-t", session],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        if _pid_alive(pid):
+            try:
+                _signal_group(pid, signal.SIGKILL)
+            except OSError:
+                pass
+    return {"run_id": run_id, "phase": "stopped", "stopped": True, "pid": pid}
 
 
 def _slm_log_path_from_adapter_api(adapter_api_text: str) -> Optional[Path]:
