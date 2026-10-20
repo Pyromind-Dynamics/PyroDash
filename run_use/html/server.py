@@ -33,6 +33,7 @@ from metrics import (  # noqa: E402
     format_metrics_row,
     parse_leaderboard,
     persist_run_to_result_md,
+    planned_count_from_mini_extra_args,
 )
 
 app = FastAPI(title="PyroDash run_use", version="0.2.0")
@@ -777,6 +778,10 @@ def start_run(body: StartRunRequest) -> JSONResponse:
             f"{action} {RUN_SH} mode={body.mode} cluster={cluster} "
             f"run_id={run_id} tmux={session}\n"
         )
+    mini_extra = (body.mini_extra_args or "").strip()
+    planned = planned_count_from_mini_extra_args(mini_extra)
+    if planned is None and body.mode == "swe_20filter":
+        planned = SWE20_EXPECTED
     status = {
         **prev_status,
         "run_id": run_id,
@@ -789,7 +794,12 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         "updated_at": now,
         "tmux_session": session,
         "pid": None,
+        "mini_extra_args": mini_extra,
     }
+    if planned is not None:
+        status["planned_instances"] = planned
+    else:
+        status.pop("planned_instances", None)
     status.setdefault("started_at", now)
     status.pop("finished_at", None)
     status_path = run_dir / "status.json"

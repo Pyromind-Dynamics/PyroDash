@@ -334,13 +334,61 @@ def _parse_harbor(eval_dir: Path) -> dict[str, Any]:
 
 
 _RUNNING_ON = re.compile(r"Running on (\d+) instances")
+# eval.sh dumps argv one token per line: "--slice" then "0:1", or "--slice=0:1".
+_SLICE_SPEC = re.compile(
+    r"(?:--slice(?:=|\s+)|--slice\n\s*)(\d*):(\d*)",
+    re.MULTILINE,
+)
+_FILTER_SPEC = re.compile(
+    r"(?:--filter(?:=|\s+)|--filter\n\s*)(\S+)",
+    re.MULTILINE,
+)
+
+
+def _count_from_slice_spec(spec_start: str, spec_end: str) -> Optional[int]:
+    """Map mini-extra ``--slice start:end`` to instance count when computable."""
+    if spec_start == "" and spec_end.isdigit():
+        return int(spec_end)
+    if spec_end == "":
+        return None
+    if spec_start.isdigit() and spec_end.isdigit():
+        start, end = int(spec_start), int(spec_end)
+        if end >= start:
+            return end - start
+    return None
+
+
+def planned_count_from_mini_extra_args(text: str) -> Optional[int]:
+    """Parse ``--slice`` / ``--filter`` from MINI_EXTRA_ARGS (one flag per line OK)."""
+    if not text or not str(text).strip():
+        return None
+    raw = str(text)
+    # Prefer slice when both appear (UI often keeps an old filter line).
+    slice_count: Optional[int] = None
+    for match in _SLICE_SPEC.finditer(raw):
+        n = _count_from_slice_spec(match.group(1), match.group(2))
+        if n is not None:
+            slice_count = n
+    if slice_count is not None:
+        return slice_count
+    filter_count: Optional[int] = None
+    for match in _FILTER_SPEC.finditer(raw):
+        ids = [x for x in match.group(1).split("|") if x]
+        if ids:
+            filter_count = len(ids)
+    return filter_count
 
 
 def _planned_instance_count(run_dir: Path) -> Optional[int]:
-    """Instances mini-extra actually scheduled, e.g. after --slice 0:1."""
+    """Instances mini-extra actually scheduled, e.g. after --slice 0:1.
+
+    Order: live ``Running on N`` → eval.log argv → status.json
+    ``planned_instances`` / ``mini_extra_args`` (set at launch, before eval.log exists).
+    """
     candidates = [run_dir / "logs" / "eval.log"]
     candidates.extend(run_dir.glob("*/runs/minisweagent.log"))
     found: Optional[int] = None
+    argv_count: Optional[int] = None
     for path in candidates:
         if not path.is_file():
             continue
@@ -350,7 +398,24 @@ def _planned_instance_count(run_dir: Path) -> Optional[int]:
             continue
         for match in _RUNNING_ON.finditer(text):
             found = int(match.group(1))
-    return found
+        n = planned_count_from_mini_extra_args(text)
+        if n is not None:
+            argv_count = n
+    if found is not None:
+        return found
+    if argv_count is not None:
+        return argv_count
+
+    status = _read_json(run_dir / "status.json") or {}
+    if isinstance(status, dict):
+        raw_planned = status.get("planned_instances")
+        if raw_planned is not None:
+            try:
+                return int(raw_planned)
+            except (TypeError, ValueError):
+                pass
+        return planned_count_from_mini_extra_args(str(status.get("mini_extra_args") or ""))
+    return None
 
 
 def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> dict[str, Any]:
