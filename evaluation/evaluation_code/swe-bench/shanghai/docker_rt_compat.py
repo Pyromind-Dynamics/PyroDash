@@ -69,8 +69,99 @@ def normalize_container_inspect(data: Any) -> Any:
 _installed = False
 
 
+def _patch_exec_run_honor_workdir() -> None:
+    """docker-rt ignores docker-py ``exec_run(..., workdir=...)``.
+
+    SWE-bench applies patches with ``workdir=/testbed``. Without an explicit
+    ``cd``, ``git apply`` runs in ``/`` and fails with ``No file to patch``.
+    Rewrite the command to ``cd <workdir> && ...`` before calling exec.
+    """
+    import shlex
+
+    from docker.models.containers import Container
+
+    _orig = Container.exec_run
+
+    def exec_run(  # type: ignore[no-untyped-def]
+        self,
+        cmd,
+        stdout=True,
+        stderr=True,
+        stdin=False,
+        tty=False,
+        privileged=False,
+        user="",
+        detach=False,
+        stream=False,
+        socket=False,
+        environment=None,
+        workdir=None,
+        demux=False,
+    ):
+        if workdir:
+            if isinstance(cmd, (list, tuple)):
+                inner = f"cd {shlex.quote(str(workdir))} && {shlex.join([str(x) for x in cmd])}"
+            else:
+                inner = f"cd {shlex.quote(str(workdir))} && {cmd}"
+            cmd = ["bash", "-c", inner]
+            workdir = None
+        return _orig(
+            self,
+            cmd,
+            stdout=stdout,
+            stderr=stderr,
+            stdin=stdin,
+            tty=tty,
+            privileged=privileged,
+            user=user,
+            detach=detach,
+            stream=stream,
+            socket=socket,
+            environment=environment,
+            workdir=workdir,
+            demux=demux,
+        )
+
+    Container.exec_run = exec_run  # type: ignore[method-assign,assignment]
+
+
+def _patch_images_list_skip_missing() -> None:
+    """docker-rt ``GET /images/json`` returns RepoTags, but inspect-by-Id 404s.
+
+    docker-py's ``images.list()`` does ``get(Id)`` for every row; the first 404
+    aborts swebench ``list_images`` before evaluation starts. Prefer inspect,
+    otherwise synthesize an Image from the list row (keeps RepoTags).
+    """
+    from docker.errors import ImageNotFound, NotFound
+    from docker.models.images import ImageCollection
+
+    def list(self, name=None, all=False, filters=None):  # type: ignore[no-untyped-def]
+        resp = self.client.api.images(name=name, all=all, filters=filters)
+        out = []
+        for row in resp:
+            image_id = row.get("Id") or row.get("id")
+            if not image_id:
+                continue
+            try:
+                out.append(self.get(image_id))
+                continue
+            except (ImageNotFound, NotFound):
+                pass
+            attrs = {
+                "Id": image_id,
+                "RepoTags": row.get("RepoTags") or [],
+                "RepoDigests": row.get("RepoDigests") or [],
+                "Created": row.get("Created"),
+                "Size": row.get("Size") or 0,
+            }
+            out.append(self.prepare_model(attrs))
+        return out
+
+    ImageCollection.list = list  # type: ignore[method-assign,assignment]
+
+
 def install() -> None:
-    """Patch docker APIClient.inspect_container (idempotent)."""
+    """Patch docker-rt quirks for docker-py / SWE-bench harness (idempotent)."""
     global _installed
     if _installed:
         return
@@ -83,4 +174,11 @@ def install() -> None:
         return normalize_container_inspect(_orig(self, container, *args, **kwargs))
 
     ContainerApiMixin.inspect_container = _inspect_container  # type: ignore[method-assign,assignment]
+    _patch_exec_run_honor_workdir()
+    _patch_images_list_skip_missing()
     _installed = True
+    print(
+        "[docker_rt_compat] installed (container inspect normalize, "
+        "exec_run honors workdir via cd, images.list uses list RepoTags)",
+        flush=True,
+    )
