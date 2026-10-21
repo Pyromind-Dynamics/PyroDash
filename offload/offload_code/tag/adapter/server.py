@@ -404,7 +404,7 @@ class OffloadAdapter:
                     messages = ol.build_offload_messages(offload_history, raw_output)
                     llm_max = llm_max_tokens_from_budget(max_tokens, slm_out_tok)
                     llm_enable_thinking = enable_thinking
-                glm_content, glm_think, llm_usage, glm_tool_calls = await call_openai_chat(
+                llm_content, llm_think, llm_usage, llm_tool_calls = await call_openai_chat(
                     self.llm,
                     messages,
                     max_tokens=llm_max,
@@ -413,32 +413,32 @@ class OffloadAdapter:
                     enable_thinking=llm_enable_thinking,
                     reasoning_effort=reasoning_effort,
                 )
-                llm_text = glm_content or ""
-                llm_think_text = glm_think or ""
-                if glm_content.startswith("[Error:"):
-                    logger.error("sid=%s LLM error: %s", sid, glm_content[:500])
+                llm_text = llm_content or ""
+                llm_think_text = llm_think or ""
+                if llm_content.startswith("[Error:"):
+                    logger.error("sid=%s LLM error: %s", sid, llm_content[:500])
                 if llm_usage is not None:
                     try:
                         llm_prompt_tok, llm_completion_tok = require_usage_tokens(llm_usage, where=f"LLM sid={sid}")
                     except RuntimeError:
                         logger.error("sid=%s LLM response missing/incomplete usage: %r", sid, llm_usage)
                         raise
-                elif not glm_content.startswith("[Error:"):
+                elif not llm_content.startswith("[Error:"):
                     logger.error("sid=%s LLM response missing/incomplete usage: %r", sid, llm_usage)
                     raise RuntimeError(f"LLM sid={sid} missing usage")
                 if self.offload_mode == "handoff" and not enable_thinking:
-                    glm_think = ""
+                    llm_think = ""
                 offloaded = True
                 if self.offload_mode == "rewrite":
-                    content = glm_content or ""
-                    think = glm_think or ""
-                    tool_calls = list(glm_tool_calls or [])
+                    content = llm_content or ""
+                    think = llm_think or ""
+                    tool_calls = list(llm_tool_calls or [])
                 else:
                     wire, _finish = ol.amend_reply_openai(
                         raw_output=raw_output,
-                        glm_content=glm_content,
-                        glm_think=glm_think,
-                        glm_tool_calls=glm_tool_calls,
+                        llm_content=llm_content,
+                        llm_think=llm_think,
+                        llm_tool_calls=llm_tool_calls,
                         slm_tool_calls=slm_tool_calls,
                     )
                     content = wire.get("content") or ""

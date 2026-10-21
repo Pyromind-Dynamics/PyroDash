@@ -390,7 +390,7 @@ def parse_openai_tool_calls(raw_tool_calls: Any) -> list[dict[str, Any]]:
             arguments = call.get("arguments", {})
         out.append(
             {
-                "id": str(call.get("id") or f"chatcmpl-tool-glm-{i}"),
+                "id": str(call.get("id") or f"chatcmpl-tool-llm-{i}"),
                 "type": "function",
                 "function": {
                     "name": str(name),
@@ -426,30 +426,30 @@ def openai_tool_calls_to_anthropic_blocks(tool_calls: list[dict[str, Any]]) -> l
     return blocks
 
 
-def compose_complete_assistant(*, slm_content: str, glm_content: str, glm_think: str) -> tuple[str, str]:
-    text = glm_content or ""
-    think = "".join(p for p in (slm_content, glm_think) if p)
+def compose_complete_assistant(*, slm_content: str, llm_content: str, llm_think: str) -> tuple[str, str]:
+    text = llm_content or ""
+    think = "".join(p for p in (slm_content, llm_think) if p)
     return text, think
 
 
 def amend_reply_wire(
     *,
     raw_output: str,
-    glm_content: str,
-    glm_think: str,
-    glm_tool_calls: list[dict[str, Any]] | None,
+    llm_content: str,
+    llm_think: str,
+    llm_tool_calls: list[dict[str, Any]] | None,
     slm_tool_blocks: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict], str, dict[str, Any]]:
     """Return (anthropic blocks, stop_reason, manager_message)."""
     text, think = compose_complete_assistant(
         slm_content=raw_output,
-        glm_content=glm_content,
-        glm_think=glm_think,
+        llm_content=llm_content,
+        llm_think=llm_think,
     )
-    glm_tool_calls = list(glm_tool_calls or [])
+    llm_tool_calls = list(llm_tool_calls or [])
     tool_blocks = (
-        openai_tool_calls_to_anthropic_blocks(glm_tool_calls)
-        if glm_tool_calls
+        openai_tool_calls_to_anthropic_blocks(llm_tool_calls)
+        if llm_tool_calls
         else list(slm_tool_blocks or [])
     )
     blocks: list[dict] = []
@@ -476,18 +476,18 @@ def amend_reply_wire(
 def amend_reply_openai(
     *,
     raw_output: str,
-    glm_content: str,
-    glm_think: str,
-    glm_tool_calls: list[dict[str, Any]] | None,
+    llm_content: str,
+    llm_think: str,
+    llm_tool_calls: list[dict[str, Any]] | None,
     slm_tool_calls: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Return (openai assistant message, finish_reason) after LLM handoff."""
     text, think = compose_complete_assistant(
         slm_content=raw_output,
-        glm_content=glm_content,
-        glm_think=glm_think,
+        llm_content=llm_content,
+        llm_think=llm_think,
     )
-    tool_calls = list(glm_tool_calls or []) or list(slm_tool_calls or [])
+    tool_calls = list(llm_tool_calls or []) or list(slm_tool_calls or [])
     has_tools = bool(tool_calls)
     wire: dict[str, Any] = {
         "role": "assistant",
