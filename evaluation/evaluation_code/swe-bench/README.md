@@ -16,7 +16,7 @@ Preferred via `run_use` (two envs) / 推荐经 `run_use`（两套环境）：
 | Env | Install / 安装 |
 |-----|----------------|
 | `VLLM_ENV` (vLLM / adapter) | root `requirements.txt` + `offload/offload_code/requirements.txt` |
-| `HARNESS_PYTHON` (swebench) | this folder’s `requirements.txt` (`swebench`, `mini-swe-agent`, `docker`) |
+| `HARNESS_PYTHON` (swebench) | this folder’s `requirements.txt` (`swebench==5.0.2`, `mini-swe-agent`, `docker`) |
 
 ## Usage / 用法
 
@@ -57,9 +57,9 @@ Token / offload 统计仍在 adapter：`GET /stats` 及其 `logs/.../adapter_sta
 | `WORKERS` | `4` | mini-extra parallelism |
 | `STEP_LIMIT` | `150` | agent step limit |
 | `HARNESS_WORKERS` | `8` | harness parallelism |
-| `DATASET_NAME` | `princeton-nlp/SWE-bench_Verified` | harness dataset |
+| `DATASET_NAME` | `SWE-bench/SWE-bench_Verified` | harness dataset（5.x schema，含 `image`；勿用 `princeton-nlp/*`） |
 | `RUN_ID` | `swebench_offload_pred` | harness run id |
-| `HARNESS_PYTHON` | (required) | Python with `swebench` + `docker` — set by `run_use` / web UI |
+| `HARNESS_PYTHON` | (required) | Python with `swebench==5.0.2` + `docker` — set by `run_use` / web UI |
 
 Harness reports land under `verified/` (or `EVAL_OUTPUT_DIR/verified/` from `run_use`). Prefer launching via `run_use`; standalone:  
 Harness 报告在 `verified/`（或 `run_use` 的 `EVAL_OUTPUT_DIR/verified/`）。优先用 `run_use`；独立跑：

@@ -153,6 +153,10 @@ def _patch_exec_run_with_timeout() -> None:
 
 
 def _patch_get_logs_eval() -> None:
+    """swebench 5.x: parsers come from PARSER_REGISTRY[test_spec.log_parser].
+
+    Keep docker-rt fallback when start/end markers are missing from the log.
+    """
     import swebench.harness.grading as grading
     from swebench.harness.constants import (
         APPLY_PATCH_FAIL,
@@ -162,10 +166,15 @@ def _patch_get_logs_eval() -> None:
         TESTS_ERROR,
         TESTS_TIMEOUT,
     )
-    from swebench.harness.log_parsers import MAP_REPO_TO_PARSER
+    from swebench.harness.grading import (
+        PARSER_REGISTRY,
+        SUITE_RAN,
+        TestStatus,
+        parse_test_exit_code,
+    )
 
     def get_logs_eval(test_spec, log_fp: str):
-        log_parser = MAP_REPO_TO_PARSER[test_spec.repo]
+        log_parser = PARSER_REGISTRY[test_spec.log_parser]
 
         with open(log_fp) as f:
             content = f.read()
@@ -180,22 +189,34 @@ def _patch_get_logs_eval() -> None:
             return {}, False
 
         if START_TEST_OUTPUT in content and END_TEST_OUTPUT in content:
-            test_content = content.split(START_TEST_OUTPUT)[1].split(END_TEST_OUTPUT)[0]
-            status_map = log_parser(test_content, test_spec)
+            sliced = content.split(START_TEST_OUTPUT)[1].split(END_TEST_OUTPUT)[0]
+            status_map = log_parser(sliced, test_spec)
             if not status_map:
                 status_map = log_parser(content, test_spec)
-            return status_map, True
-
-        # docker-rt: markers often missing; still try to grade from full log.
-        if content.strip():
+        else:
+            # docker-rt: markers often missing; still try to grade from full log.
+            if not content.strip():
+                return {}, False
             status_map = log_parser(content, test_spec)
-            if status_map:
-                return status_map, True
+            if not status_map:
+                return {}, False
 
-        return {}, False
+        if not status_map and not SUITE_RAN.search(content):
+            return {}, False
+
+        exit_code = parse_test_exit_code(content)
+        if (
+            exit_code not in (None, 0)
+            and status_map
+            and not any(
+                status in (TestStatus.FAILED.value, TestStatus.ERROR.value)
+                for status in status_map.values()
+            )
+        ):
+            return {}, False
+        return status_map, True
 
     grading.get_logs_eval = get_logs_eval  # type: ignore[assignment]
-
 
 def install() -> None:
     global _installed

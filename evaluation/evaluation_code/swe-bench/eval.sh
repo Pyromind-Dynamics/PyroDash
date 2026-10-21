@@ -36,7 +36,8 @@ SPLIT="${SPLIT:-test}"
 WORKERS="${WORKERS:-4}"
 STEP_LIMIT="${STEP_LIMIT:-150}"
 HARNESS_WORKERS="${HARNESS_WORKERS:-8}"
-DATASET_NAME="${DATASET_NAME:-princeton-nlp/SWE-bench_Verified}"
+# swebench 5.x needs the SWE-bench/* dataset (has image/eval_script); princeton-nlp/* is 4.x schema.
+DATASET_NAME="${DATASET_NAME:-SWE-bench/SWE-bench_Verified}"
 RUN_ID="${RUN_ID:-swebench_offload_pred}"
 INSTANCE_FILTER="${INSTANCE_FILTER:-}"
 # PYTHON_BIN / HARNESS_PYTHON are provided by run_use (web UI / run_coding.sh).
@@ -81,7 +82,7 @@ Env overrides:
   WORKERS              mini-extra -w (default: 4)
   STEP_LIMIT           agent.step_limit (default: 150)
   HARNESS_WORKERS      harness --max_workers (default: 8)
-  DATASET_NAME         harness dataset (default: princeton-nlp/SWE-bench_Verified)
+  DATASET_NAME         harness dataset (default: SWE-bench/SWE-bench_Verified)
   RUN_ID               harness run id
   PYTHON_BIN           python for helper bits
   HARNESS_PYTHON       python with swebench+docker (required; set by run_use / web UI)
@@ -260,8 +261,8 @@ if ! "${HARNESS_PYTHON}" -c "import docker, swebench" >/dev/null 2>&1; then
   echo "  Fix:  pip install docker swebench   OR set HARNESS_PYTHON to an env that has them" >&2
   exit 1
 fi
-# swebench 4.x ignores --report_dir and writes <model>.<run_id>.json + logs/run_evaluation/
-# to CWD. Run inside EVAL_DIR so all harness outputs stay under output/<run>/.../verified/.
+# swebench 5.x: run inside EVAL_DIR so reports / logs/run_evaluation stay under verified/.
+# Do not pass --cache_level / --clean / --namespace (removed in 5.x).
 mkdir -p "${EVAL_DIR}"
 (
   cd "${EVAL_DIR}"
@@ -270,9 +271,7 @@ mkdir -p "${EVAL_DIR}"
     --predictions_path "${PREDS}" \
     --max_workers "${HARNESS_WORKERS}" \
     --run_id "${RUN_ID}" \
-    --report_dir "${EVAL_DIR}" \
-    --cache_level instance \
-    --clean False
+    --report_dir "${EVAL_DIR}"
 )
 
 REPORT_GLOB="*.${RUN_ID}.json"

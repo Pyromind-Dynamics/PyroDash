@@ -1,13 +1,17 @@
-# SWE-bench Verified client (install on top of repo-root requirements.txt):
-#   pip install -r requirements.txt -r evaluation/evaluation_code/swe-bench/requirements.txt
+# SWE-bench Verified client (install in the harness env / HARNESS_PYTHON):
+#   pip install -r evaluation/evaluation_code/swe-bench/requirements.txt
 #
-# Typical layout (two envs via run_use web UI):
+# Typical layout (two envs via run_use):
 #   VLLM_ENV (vLLM/adapter):  root requirements.txt + offload/offload_code/requirements.txt
 #   HARNESS_PYTHON (harness): this file (swebench + mini-extra + docker SDK)
 #
 # Also needs Docker daemon available to the harness env.
+#
+# Pin swebench 5.0.2: dataset must be SWE-bench/SWE-bench_Verified (has image/
+# eval_script). princeton-nlp/SWE-bench_Verified is the 4.x schema and will
+# KeyError on 'image'. 5.x also dropped --cache_level / --clean / --namespace.
 
-swebench>=4.0.0
+swebench==5.0.2
 mini-swe-agent>=2.0.0
 docker>=7.0.0
 requests>=2.31.0
