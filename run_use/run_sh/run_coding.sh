@@ -159,9 +159,87 @@ EVAL_OUT="${RUN_DIR}/${MODE}"
 mkdir -p "${LOG_DIR}" "${EVAL_OUT}"
 
 STATUS_FILE="${RUN_DIR}/status.json"
+CONFIG_FILE="${LOG_DIR}/config.json"
 ADAPTER_PID=""
 PIPELINE_EXIT=1
 RESUME="${RESUME:-0}"
+
+write_config() {
+  # Snapshot launch params for later review. Keep UI-written fields; never store API keys.
+  "${PYTHON_BIN}" - "${CONFIG_FILE}" <<'PY'
+import json, os, time
+from pathlib import Path
+path = Path(__import__("sys").argv[1])
+prev = {}
+if path.exists():
+    try:
+        prev = json.loads(path.read_text())
+    except Exception:
+        prev = {}
+now = time.strftime("%Y-%m-%dT%H:%M:%S")
+model_path = (os.environ.get("MODEL_PATH") or "").strip()
+slm_url = (os.environ.get("SLM_BASE_URL") or "").strip()
+def secret_meta(key):
+    text = os.environ.get(key) or ""
+    return {"set": bool(text.strip()), "len": len(text)}
+runtime = {
+    "saved_at": prev.get("saved_at") or now,
+    "updated_at": now,
+    "source": prev.get("source") or "run_coding.sh",
+    "run_id": os.environ.get("RUN_ID", ""),
+    "resume": os.environ.get("RESUME", "0") == "1",
+    "router_mode": os.environ.get("ROUTER_MODE", ""),
+    "offload_mode": "—" if os.environ.get("ROUTER_MODE") == "slm_only" else os.environ.get("OFFLOAD_MODE", ""),
+    "use_llm": (os.environ.get("USE_LLM", "true").lower() == "true"),
+    "mode": os.environ.get("MODE", ""),
+    "cluster": os.environ.get("CLUSTER", ""),
+    "slm": {
+        "source": "local" if model_path else "remote",
+        "model_path": model_path,
+        "base_url": slm_url,
+        "model": (os.environ.get("SLM_MODEL") or "").strip(),
+        "api_key": secret_meta("SLM_API_KEY"),
+        "backend": os.environ.get("SLM_BACKEND", ""),
+        "port": int(os.environ.get("SLM_PORT") or os.environ.get("VLLM_PORT") or 0 or 8007),
+        "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", ""),
+        "vllm_extra_args": (os.environ.get("VLLM_EXTRA_ARGS") or "").strip(),
+        "sglang_extra_args": (os.environ.get("SGLANG_EXTRA_ARGS") or "").strip(),
+    },
+    "llm": {
+        "base_url": (os.environ.get("LLM_BASE_URL") or "").strip(),
+        "model": (os.environ.get("LLM_MODEL") or "").strip(),
+        "api_key": secret_meta("LLM_API_KEY"),
+    },
+    "eval": {
+        "mini_extra_args": (os.environ.get("MINI_EXTRA_ARGS") or "").strip(),
+        "workers": int(os.environ.get("WORKERS") or 0 or 4),
+        "harness_workers": int(os.environ.get("HARNESS_WORKERS") or 0 or 8),
+        "step_limit": int(os.environ.get("STEP_LIMIT") or 0 or 150),
+        "n_concurrent": int(os.environ.get("N_CONCURRENT") or os.environ.get("WORKERS") or 0 or 4),
+        "n_tasks": (os.environ.get("N_TASKS") or "").strip(),
+        "planned_instances": (prev.get("eval") or {}).get("planned_instances"),
+        "deepswe_tasks": (os.environ.get("DEEPSWE_TASKS") or "").strip(),
+        "tb_dataset": os.environ.get("TB_DATASET", ""),
+        "instance_filter": os.environ.get("INSTANCE_FILTER", ""),
+    },
+    "ports": {
+        "adapter_port": int(os.environ.get("ADAPTER_PORT") or 0 or 18027),
+        "slm_port": int(os.environ.get("SLM_PORT") or os.environ.get("VLLM_PORT") or 0 or 8007),
+    },
+    "envs": {
+        "vllm_env": os.environ.get("VLLM_ENV", ""),
+        "python_bin": os.environ.get("PYTHON_BIN", ""),
+        "vllm_bin": os.environ.get("VLLM_BIN", ""),
+        "harness_python": os.environ.get("HARNESS_PYTHON", ""),
+    },
+}
+if prev.get("resume_history"):
+    runtime["resume_history"] = prev["resume_history"]
+if prev.get("original"):
+    runtime["original"] = prev["original"]
+path.write_text(json.dumps(runtime, indent=2, ensure_ascii=False) + "\n")
+PY
+}
 
 write_status() {
   local phase="$1"
@@ -178,6 +256,8 @@ if p.exists():
         prev = json.loads(p.read_text())
     except Exception:
         prev = {}
+if router == "slm_only":
+    offload_mode = "—"
 data = {
     **prev,
     "run_id": run_id,
@@ -252,6 +332,11 @@ export VLLM_ENV VLLM_BIN VLLM_CONDA_PREFIX VIRTUAL_ENV PATH
 export HARNESS_PYTHON="${HARNESS_PYTHON:-}"
 export OFFLOAD_LOG_DIR="${LOG_DIR}"
 export TOKEN_USAGE_DIR="${LOG_DIR}/adapter_stats"
+export MODE CLUSTER RUN_ID ROUTER_MODE RESUME
+export N_CONCURRENT N_TASKS DEEPSWE_TASKS TB_DATASET
+export INSTANCE_FILTER="${INSTANCE_FILTER:-}"
+[[ -v MINI_EXTRA_ARGS ]] && export MINI_EXTRA_ARGS
+write_config
 # Optional engine extras / binaries (only export when set — set -u safe)
 [[ -v VLLM_EXTRA_ARGS ]] && export VLLM_EXTRA_ARGS
 [[ -v SGLANG_EXTRA_ARGS ]] && export SGLANG_EXTRA_ARGS
@@ -308,6 +393,10 @@ EVAL_LOG="${LOG_DIR}/eval.log"
 echo "[run] eval → ${EVAL_OUT} (log ${EVAL_LOG})"
 # Unbuffered python so trajectory / progress lines show up sooner in eval.log
 export PYTHONUNBUFFERED=1
+# Keep eval.log line-oriented: Rich Live + inherited FORCE_COLOR otherwise
+# writes spinner/ANSI redraws into the redirected file (see eval.sh).
+export TTY_COMPATIBLE=0
+unset FORCE_COLOR
 export PYTHONPATH="${PYTHONPATH:-}"
 
 # Background: refresh status.json progress from preds while eval runs

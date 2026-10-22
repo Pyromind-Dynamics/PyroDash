@@ -28,6 +28,13 @@ MODE_EXPECTED_TOTAL: dict[str, Optional[int]] = {
 
 SCORE_IS_RATE = frozenset({"terminal", "deepswe"})
 
+# 20filter 拆成三张表后，按 router_mode 写入对应小节。
+ROUTER_SUBSECTIONS: dict[str, str] = {
+    "slm_only": "### 非 offload（slm_only）",
+    "tag": "### offload（tag）",
+    "entropy": "### offload（entropy）",
+}
+
 COLUMNS = [
     "model",
     "score",
@@ -614,13 +621,52 @@ def format_metrics_row(row: dict[str, Any]) -> str:
     return "| " + " | ".join(cells) + " |"
 
 
+def _split_md_row(line: str) -> list[str]:
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def _section_end(lines: list[str], start: int) -> int:
+    for i in range(start + 1, len(lines)):
+        if lines[i].startswith("# "):
+            return i
+    return len(lines)
+
+
+def _iter_tables(lines: list[str], start: int, end: int) -> list[tuple[int, int]]:
+    """Return (header_idx, last_idx) for each markdown table in [start, end)."""
+    tables: list[tuple[int, int]] = []
+    i = start
+    while i < end:
+        if lines[i].startswith("|") and "模型" in lines[i]:
+            last = i
+            j = i + 1
+            while j < end and lines[j].startswith("|"):
+                last = j
+                j += 1
+            tables.append((i, last))
+            i = j
+            continue
+        i += 1
+    return tables
+
+
+def _heading_before(lines: list[str], start: int, table_idx: int) -> str:
+    for i in range(table_idx - 1, start - 1, -1):
+        s = lines[i].strip()
+        if s.startswith("### "):
+            return s[4:].strip()
+        if s.startswith("|") or s.startswith("# "):
+            break
+    return ""
+
+
 def parse_leaderboard(result_md: Path, mode: str) -> dict[str, Any]:
-    """Parse one mode section from result.md into headers + rows."""
+    """Parse one mode section from result.md into headers + subsection tables."""
     header = MODE_SECTIONS.get(mode)
     if not header:
-        return {"mode": mode, "columns": [], "rows": [], "error": f"unknown mode {mode}"}
+        return {"mode": mode, "columns": [], "rows": [], "sections": [], "error": f"unknown mode {mode}"}
     if not result_md.is_file():
-        return {"mode": mode, "columns": [], "rows": [], "error": "result.md missing"}
+        return {"mode": mode, "columns": [], "rows": [], "sections": [], "error": "result.md missing"}
 
     lines = result_md.read_text().splitlines()
     start = None
@@ -629,50 +675,75 @@ def parse_leaderboard(result_md: Path, mode: str) -> dict[str, Any]:
             start = i
             break
     if start is None:
-        return {"mode": mode, "columns": [], "rows": [], "error": f"section missing: {header}"}
+        return {"mode": mode, "columns": [], "rows": [], "sections": [], "error": f"section missing: {header}"}
 
-    table_start = None
-    for i in range(start + 1, len(lines)):
-        if lines[i].startswith("|") and "模型" in lines[i]:
-            table_start = i
-            break
-        if lines[i].startswith("# "):
-            break
-    if table_start is None:
-        return {"mode": mode, "columns": [], "rows": [], "error": "no table"}
+    end = _section_end(lines, start)
+    tables = _iter_tables(lines, start + 1, end)
+    if not tables:
+        return {"mode": mode, "columns": [], "rows": [], "sections": [], "error": "no table"}
 
-    table_lines: list[str] = []
-    for i in range(table_start, len(lines)):
-        if lines[i].startswith("|"):
-            table_lines.append(lines[i])
-        else:
-            break
-
-    def split_row(line: str) -> list[str]:
-        parts = [c.strip() for c in line.strip().strip("|").split("|")]
-        return parts
-
-    if len(table_lines) < 2:
-        return {"mode": mode, "columns": [], "rows": []}
-
-    columns = split_row(table_lines[0])
+    columns: list[str] = []
     rows: list[dict[str, str]] = []
-    for line in table_lines[2:]:
-        cells = split_row(line)
-        if not cells or not cells[0] or set(cells[0]) <= {"-", " "}:
+    sections: list[dict[str, Any]] = []
+    for header_idx, last_idx in tables:
+        table_lines = lines[header_idx : last_idx + 1]
+        if len(table_lines) < 2:
             continue
-        # pad / trim
-        while len(cells) < len(columns):
-            cells.append("")
-        rows.append({columns[i]: cells[i] for i in range(len(columns))})
+        cols = _split_md_row(table_lines[0])
+        if not columns:
+            columns = cols
+        sec_rows: list[dict[str, str]] = []
+        for line in table_lines[2:]:
+            cells = _split_md_row(line)
+            if not cells or not cells[0] or set(cells[0]) <= {"-", " "}:
+                continue
+            while len(cells) < len(columns):
+                cells.append("")
+            rec = {columns[i]: cells[i] for i in range(len(columns))}
+            sec_rows.append(rec)
+            rows.append(rec)
+        if sec_rows:
+            sections.append(
+                {
+                    "title": _heading_before(lines, start, header_idx),
+                    "rows": sec_rows,
+                }
+            )
 
     return {
         "mode": mode,
         "section": header,
         "columns": columns,
         "rows": rows,
+        "sections": sections,
         "score_is_rate": mode in SCORE_IS_RATE,
     }
+
+
+def _subsection_for_row(mode: str, row: dict[str, Any]) -> str | None:
+    if mode != "swe_20filter":
+        return None
+    router = str(row.get("router_mode") or "").strip()
+    return ROUTER_SUBSECTIONS.get(router)
+
+
+def _insert_subsection_table(
+    lines: list[str],
+    insert_at: int,
+    mode: str,
+    subsection: str,
+    new_line: str,
+) -> None:
+    chunk = [
+        "",
+        subsection,
+        "",
+        _table_header_line(mode),
+        _table_sep_line(mode),
+        new_line,
+        "",
+    ]
+    lines[insert_at:insert_at] = chunk
 
 
 def append_or_update_result_md(
@@ -685,24 +756,37 @@ def append_or_update_result_md(
     if not header:
         return False
     result_md.parent.mkdir(parents=True, exist_ok=True)
+    new_line = format_metrics_row(row)
+    subsection = _subsection_for_row(mode, row)
     if not result_md.is_file():
-        # minimal skeleton
-        result_md.write_text(
-            "\n".join(
+        skeleton = [
+            "- **价格（汇总固定）**：SLM Qwen3.5-4B `$0.016/M` in / `$0.23/M` out；"
+            "LLM DeepSeek-V4-Flash `$0.44/M` in / `$1.32/M` out（cache miss）。",
+            "",
+            header,
+            "",
+        ]
+        if subsection:
+            skeleton.extend(
                 [
-                    "- **价格（汇总固定）**：SLM Qwen3.5-4B `$0.016/M` in / `$0.23/M` out；"
-                    "LLM DeepSeek-V4-Flash `$0.44/M` in / `$1.32/M` out（cache miss）。",
-                    "",
-                    header,
+                    subsection,
                     "",
                     _table_header_line(mode),
                     _table_sep_line(mode),
-                    format_metrics_row(row),
+                    new_line,
                     "",
                 ]
             )
-            + "\n"
-        )
+        else:
+            skeleton.extend(
+                [
+                    _table_header_line(mode),
+                    _table_sep_line(mode),
+                    new_line,
+                    "",
+                ]
+            )
+        result_md.write_text("\n".join(skeleton) + "\n")
         return True
 
     text = result_md.read_text()
@@ -713,63 +797,102 @@ def append_or_update_result_md(
             start = i
             break
     if start is None:
-        # append new section
         block = [
             "",
             header,
             "",
             f"- run_use mode=`{mode}`。",
             "",
-            _table_header_line(mode),
-            _table_sep_line(mode),
-            format_metrics_row(row),
-            "",
         ]
+        if subsection:
+            block.extend(
+                [
+                    subsection,
+                    "",
+                    _table_header_line(mode),
+                    _table_sep_line(mode),
+                    new_line,
+                    "",
+                ]
+            )
+        else:
+            block.extend(
+                [
+                    _table_header_line(mode),
+                    _table_sep_line(mode),
+                    new_line,
+                    "",
+                ]
+            )
         result_md.write_text(text.rstrip() + "\n" + "\n".join(block) + "\n")
         return True
 
-    table_start = None
-    for i in range(start + 1, len(lines)):
-        if lines[i].startswith("|") and "模型" in lines[i]:
-            table_start = i
-            break
-        if lines[i].startswith("# "):
-            break
-    if table_start is None:
-        # insert table after section header
-        insert_at = start + 1
-        while insert_at < len(lines) and not lines[insert_at].startswith("# "):
-            insert_at += 1
-        chunk = [
-            "",
-            _table_header_line(mode),
-            _table_sep_line(mode),
-            format_metrics_row(row),
-            "",
-        ]
-        lines[insert_at:insert_at] = chunk
+    end = _section_end(lines, start)
+    tables = _iter_tables(lines, start + 1, end)
+    model_name = str(row.get("model") or "").strip()
+
+    if not tables:
+        insert_at = end
+        if subsection:
+            _insert_subsection_table(lines, insert_at, mode, subsection, new_line)
+        else:
+            chunk = [
+                "",
+                _table_header_line(mode),
+                _table_sep_line(mode),
+                new_line,
+                "",
+            ]
+            lines[insert_at:insert_at] = chunk
         result_md.write_text("\n".join(lines) + "\n")
         return True
 
-    table_end = table_start
-    for i in range(table_start, len(lines)):
-        if lines[i].startswith("|"):
-            table_end = i
-        else:
-            break
-
-    model_name = str(row.get("model") or "").strip()
-    new_line = format_metrics_row(row)
+    # 同名行优先原地更新（可能已在其它小节）。
     replaced = False
-    for i in range(table_start + 2, table_end + 1):
-        cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
-        if cells and cells[0] == model_name:
-            lines[i] = new_line
-            replaced = True
+    for header_idx, last_idx in tables:
+        for i in range(header_idx + 2, last_idx + 1):
+            cells = _split_md_row(lines[i])
+            if cells and cells[0] == model_name:
+                lines[i] = new_line
+                replaced = True
+                break
+        if replaced:
             break
-    if not replaced:
-        lines.insert(table_end + 1, new_line)
+    if replaced:
+        result_md.write_text("\n".join(lines) + "\n")
+        return True
 
+    target: tuple[int, int] | None = None
+    if subsection:
+        heading_idx = None
+        for i in range(start + 1, end):
+            if lines[i].strip() == subsection:
+                heading_idx = i
+                break
+        if heading_idx is None:
+            _insert_subsection_table(lines, end, mode, subsection, new_line)
+            result_md.write_text("\n".join(lines) + "\n")
+            return True
+        for header_idx, last_idx in tables:
+            if header_idx > heading_idx:
+                target = (header_idx, last_idx)
+                break
+        if target is None:
+            chunk = [
+                "",
+                _table_header_line(mode),
+                _table_sep_line(mode),
+                new_line,
+                "",
+            ]
+            lines[heading_idx + 1 : heading_idx + 1] = chunk
+            result_md.write_text("\n".join(lines) + "\n")
+            return True
+    else:
+        target = tables[0]
+
+    _header_idx, last_idx = target
+    lines.insert(last_idx + 1, new_line)
     result_md.write_text("\n".join(lines) + "\n")
     return True
 

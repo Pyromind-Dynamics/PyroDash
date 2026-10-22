@@ -374,14 +374,14 @@ class OffloadAdapter:
             last_offload_n = n
 
             if not self.use_llm:
-                # SLM-only: strip residual offload markers and continue (do not abort).
+                # SLM-only: keep the tag as ordinary text; do not call LLM.
                 offloaded = False
                 last_offload_n = n
-                content = ol._strip_offload_tag_from_text(slm_content or "")
-                think = ol._strip_offload_tag_from_text(slm_think or raw_output or "")
+                content = slm_content or ""
+                think = slm_think or raw_output or ""
                 tool_calls = list(slm_tool_calls or [])
                 logger.info(
-                    "sid=%s offload ignored (use_llm=false) N=%d → continue SLM-only (%.1fs)",
+                    "sid=%s offload ignored (use_llm=false) N=%d → keep tag as text (%.1fs)",
                     sid,
                     n,
                     time.monotonic() - t0,

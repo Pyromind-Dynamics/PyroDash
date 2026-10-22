@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=15" />
+  <link rel="stylesheet" href="styles.css?v=25" />
 </head>
 <body>
   <div class="page">
@@ -41,7 +41,9 @@
         <p class="lede">起 offload adapter，跑 SWE / DeepSWE / Terminal-Bench；结果写入 <code>run_use/output</code>。<code>swe_20filter</code> 为 20 题特例。</p>
 
         <form id="run-form" class="form">
-          <fieldset>
+          <div class="form-cols">
+          <div class="form-col form-col-left">
+          <fieldset class="form-stack">
             <legend>Router</legend>
             <label>
               ROUTER
@@ -62,6 +64,98 @@
             <p id="router-help" class="field-help full"></p>
           </fieldset>
 
+          <fieldset id="slm-fieldset">
+            <legend>SLM</legend>
+            <div class="seg-toggle full" id="slm-source-toggle" role="group" aria-label="SLM source">
+              <label class="seg-opt">
+                <input type="radio" name="slm_source" value="local" checked />
+                <span>本地权重</span>
+              </label>
+              <label class="seg-opt">
+                <input type="radio" name="slm_source" value="remote" />
+                <span>远程 API</span>
+              </label>
+            </div>
+            <div id="slm-local-fields" class="slm-local">
+              <label class="full">
+                MODEL_PATH（本地权重目录）
+                <input name="model_path" id="model-path" type="text" placeholder="/path/to/checkpoint_hf" />
+              </label>
+              <label>
+                SLM_BACKEND
+                <select name="slm_backend" id="slm-backend">
+                  <option value="vllm" selected>vllm</option>
+                  <option value="sglang">sglang</option>
+                </select>
+              </label>
+              <label>
+                SLM_PORT
+                <input name="slm_port" id="slm-port" type="number" value="8007" />
+              </label>
+              <label>
+                CUDA_VISIBLE_DEVICES
+                <input name="cuda_visible_devices" id="cuda-visible-devices" type="text" value="0" />
+              </label>
+              <details class="full slm-advanced" id="slm-advanced">
+                <summary>高级引擎参数（整段原样传给 vLLM / SGLang，可增删任意 --flag）</summary>
+                <div class="slm-advanced-grid">
+                  <label class="backend-vllm full">
+                    VLLM_EXTRA_ARGS
+                    <span class="field-hint">每个 --flag 单独一行。需要限长时自行加上一行：--max-model-len 128000</span>
+                    <textarea name="vllm_extra_args" id="vllm-extra-args" class="mono-args" rows="7" spellcheck="false">
+--gpu-memory-utilization 0.90
+--tensor-parallel-size 1
+--trust-remote-code
+--reasoning-parser qwen3
+--enable-auto-tool-choice
+--tool-call-parser qwen3_coder</textarea>
+                  </label>
+                  <label class="backend-sglang full">
+                    SGLANG_EXTRA_ARGS
+                    <span class="field-hint">每个 --flag 单独一行。需要限长时自行加上一行：--context-length 128000</span>
+                    <textarea name="sglang_extra_args" id="sglang-extra-args" class="mono-args" rows="5" spellcheck="false">
+--tp 1
+--mem-fraction-static 0.90
+--tool-call-parser qwen3_coder
+--reasoning-parser qwen3</textarea>
+                  </label>
+                </div>
+              </details>
+            </div>
+            <div id="slm-remote-fields" class="slm-remote" hidden>
+              <label class="full">
+                SLM_BASE_URL
+                <input name="slm_base_url" id="slm-base-url" type="text" placeholder="http://host:8000/v1" />
+              </label>
+              <label>
+                SLM_MODEL
+                <input name="slm_model" id="slm-model" type="text" placeholder="model-name" />
+              </label>
+              <label>
+                SLM_API_KEY
+                <input name="slm_api_key" id="slm-api-key" type="text" value="dummy" />
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset id="llm-fieldset">
+            <legend>LLM</legend>
+            <label class="full">
+              LLM_BASE_URL
+              <input name="llm_base_url" id="llm-base-url" type="text" placeholder="https://api.example.com/v1" />
+            </label>
+            <label>
+              LLM_MODEL
+              <input name="llm_model" id="llm-model" type="text" />
+            </label>
+            <label>
+              LLM_API_KEY
+              <input name="llm_api_key" id="llm-api-key" type="password" />
+            </label>
+          </fieldset>
+          </div>
+
+          <div class="form-col form-col-right">
           <fieldset id="ports-fieldset">
             <legend>端口 / 运行</legend>
             <label id="adapter-port-label">
@@ -164,96 +258,8 @@
               <input name="tb_dataset" type="text" value="terminal-bench/terminal-bench-2-1" />
             </label>
           </fieldset>
-
-          <fieldset id="slm-fieldset">
-            <legend>SLM</legend>
-            <div class="seg-toggle full" id="slm-source-toggle" role="group" aria-label="SLM source">
-              <label class="seg-opt">
-                <input type="radio" name="slm_source" value="local" checked />
-                <span>本地权重</span>
-              </label>
-              <label class="seg-opt">
-                <input type="radio" name="slm_source" value="remote" />
-                <span>远程 API</span>
-              </label>
-            </div>
-            <div id="slm-local-fields" class="slm-local">
-              <label class="full">
-                MODEL_PATH（本地权重目录）
-                <input name="model_path" id="model-path" type="text" placeholder="/path/to/checkpoint_hf" />
-              </label>
-              <label>
-                SLM_BACKEND
-                <select name="slm_backend" id="slm-backend">
-                  <option value="vllm" selected>vllm</option>
-                  <option value="sglang">sglang</option>
-                </select>
-              </label>
-              <label>
-                SLM_PORT
-                <input name="slm_port" id="slm-port" type="number" value="8007" />
-              </label>
-              <label>
-                CUDA_VISIBLE_DEVICES
-                <input name="cuda_visible_devices" id="cuda-visible-devices" type="text" value="0" />
-              </label>
-              <details class="full slm-advanced" id="slm-advanced">
-                <summary>高级引擎参数（整段原样传给 vLLM / SGLang，可增删任意 --flag）</summary>
-                <div class="slm-advanced-grid">
-                  <label class="backend-vllm full">
-                    VLLM_EXTRA_ARGS
-                    <span class="field-hint">每个 --flag 单独一行。需要限长时自行加上一行：--max-model-len 128000</span>
-                    <textarea name="vllm_extra_args" id="vllm-extra-args" class="mono-args" rows="7" spellcheck="false">
---gpu-memory-utilization 0.90
---tensor-parallel-size 1
---trust-remote-code
---reasoning-parser qwen3
---enable-auto-tool-choice
---tool-call-parser qwen3_coder</textarea>
-                  </label>
-                  <label class="backend-sglang full">
-                    SGLANG_EXTRA_ARGS
-                    <span class="field-hint">每个 --flag 单独一行。需要限长时自行加上一行：--context-length 128000</span>
-                    <textarea name="sglang_extra_args" id="sglang-extra-args" class="mono-args" rows="5" spellcheck="false">
---tp 1
---mem-fraction-static 0.90
---tool-call-parser qwen3_coder
---reasoning-parser qwen3</textarea>
-                  </label>
-                </div>
-              </details>
-            </div>
-            <div id="slm-remote-fields" class="slm-remote" hidden>
-              <label class="full">
-                SLM_BASE_URL
-                <input name="slm_base_url" id="slm-base-url" type="text" placeholder="http://host:8000/v1" />
-              </label>
-              <label>
-                SLM_MODEL
-                <input name="slm_model" id="slm-model" type="text" placeholder="model-name" />
-              </label>
-              <label>
-                SLM_API_KEY
-                <input name="slm_api_key" id="slm-api-key" type="text" value="dummy" />
-              </label>
-            </div>
-          </fieldset>
-
-          <fieldset id="llm-fieldset">
-            <legend>LLM</legend>
-            <label class="full">
-              LLM_BASE_URL
-              <input name="llm_base_url" id="llm-base-url" type="text" placeholder="https://api.example.com/v1" />
-            </label>
-            <label>
-              LLM_MODEL
-              <input name="llm_model" id="llm-model" type="text" />
-            </label>
-            <label>
-              LLM_API_KEY
-              <input name="llm_api_key" id="llm-api-key" type="password" />
-            </label>
-          </fieldset>
+          </div>
+          </div>
 
           <div class="actions">
             <button type="submit" class="btn primary" id="btn-start">开始评测</button>
@@ -311,12 +317,14 @@
             <button type="button" class="lb-tab" data-mode="terminal">Terminal</button>
             <button type="button" class="lb-tab" data-mode="deepswe">DeepSWE</button>
           </div>
+          <div id="leaderboard-subtabs" class="leaderboard-tabs lb-subtabs" role="tablist">
+            <button type="button" class="lb-tab active" data-section="slm_only">slm_only</button>
+            <button type="button" class="lb-tab" data-section="tag">tag</button>
+            <button type="button" class="lb-tab" data-section="entropy">entropy</button>
+          </div>
         </div>
         <div id="leaderboard-wrap" class="leaderboard-wrap">
-          <table id="leaderboard-table" class="leaderboard-table">
-            <thead></thead>
-            <tbody></tbody>
-          </table>
+          <div id="leaderboard-tables"></div>
           <p id="leaderboard-empty" class="muted" hidden>该 mode 暂无行</p>
         </div>
       </section>
@@ -348,10 +356,15 @@
                     <div id="traj-view-toggle" class="traj-view-toggle" hidden>
                       <button type="button" class="btn traj-btn active" data-view="chat">format</button>
                       <button type="button" class="btn traj-btn" data-view="json">JSON</button>
+                      <button type="button" class="btn traj-btn" data-view="raw">raw</button>
+                      <span id="traj-fold-toggle" class="traj-fold-toggle">
+                        <button type="button" class="btn traj-btn active" data-fold="close">close</button>
+                        <button type="button" class="btn traj-btn" data-fold="open">open</button>
+                      </span>
                     </div>
                   </div>
                   <div id="preview-body" class="preview-body">
-                    <p class="muted">左侧选 run 与文件；轨迹可在「format / JSON」间切换。</p>
+                    <p class="muted">左侧选 run 与文件；轨迹可在「format / JSON / raw」间切换。</p>
                   </div>
                 </div>
               </div>
@@ -361,6 +374,6 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=17"></script>
+  <script src="app.js?v=28"></script>
 </body>
 </html>

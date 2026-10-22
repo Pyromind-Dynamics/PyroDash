@@ -13,17 +13,78 @@
   let activeRunId = null;
   let activeLogKey = "live";
   let previewRunId = null;
-  let previewCache = { path: "", text: "", trajData: null };
+  let previewCache = { path: "", text: "", trajData: null, traces: null };
   let fileTreeTimer = null;
   let openFileKey = "";
-  let trajViewMode = "chat"; // chat | json
+  let trajViewMode = "chat"; // chat | json | raw
+  let trajFoldMode = "close"; // close | open
   let leaderboardMode = "swe_20filter";
+  let leaderboardSection = "slm_only";
+  const TAB_LS_KEY = "pyrodash_run_use_ui";
+  let applyingRoute = false;
 
   function switchTab(name) {
     $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
     $$(".panel").forEach((p) => p.classList.toggle("active", p.id === `panel-${name}`));
     const wide = name === "tables" || name === "files";
     document.querySelector(".page")?.classList.toggle("page-wide", wide);
+  }
+
+  function writeRoute(tab, runId) {
+    if (applyingRoute) return;
+    const t = tab || $(".tab.active")?.dataset.tab || "run";
+    const rid = t === "files" ? String(runId || previewRunId || "") : "";
+    const hash = t === "files" && rid ? `#files/${encodeURIComponent(rid)}` : `#${t}`;
+    if (location.hash !== hash) {
+      history.replaceState(null, "", `${location.pathname}${location.search}${hash}`);
+    }
+    try {
+      localStorage.setItem(TAB_LS_KEY, JSON.stringify({ tab: t, runId: rid }));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function parseRoute() {
+    const raw = (location.hash || "").replace(/^#/, "");
+    if (raw) {
+      const parts = raw.split("/");
+      const tab = parts[0];
+      if (tab === "files") {
+        let runId = parts.slice(1).join("/");
+        try {
+          runId = decodeURIComponent(runId);
+        } catch {
+          /* keep */
+        }
+        return { tab: "files", runId };
+      }
+      if (tab === "tables" || tab === "run") return { tab, runId: "" };
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem(TAB_LS_KEY) || "{}");
+      if (saved.tab === "run" || saved.tab === "tables" || saved.tab === "files") {
+        return { tab: saved.tab, runId: saved.runId || "" };
+      }
+    } catch {
+      /* ignore */
+    }
+    return { tab: "run", runId: "" };
+  }
+
+  async function applyRoute(route) {
+    applyingRoute = true;
+    try {
+      switchTab(route.tab);
+      if (route.tab === "tables") await loadLeaderboard(leaderboardMode);
+      if (route.tab === "files") {
+        await loadHistory();
+        if (route.runId) await showResults(route.runId);
+      }
+    } finally {
+      applyingRoute = false;
+      writeRoute(route.tab, route.runId);
+    }
   }
 
   const SWE20_FILTER =
@@ -79,7 +140,7 @@
       "需配置 LLM；不使用 OFFLOAD_MODE。",
     slm_only:
       "<strong>slm_only</strong>：仅跑小模型，不调用大模型、不注入 offload 协议。" +
-      "用于下界基线；LLM / ADAPTER_PORT / OFFLOAD_MODE 均不显示。",
+      "仍走 adapter（可改 ADAPTER_PORT）。LLM / OFFLOAD_MODE 不显示。",
   };
   const OFFLOAD_HELP = {
     handoff:
@@ -112,7 +173,7 @@
     }
 
     const adapterLabel = $("#adapter-port-label");
-    if (adapterLabel) adapterLabel.hidden = slmOnly;
+    if (adapterLabel) adapterLabel.hidden = false;
 
     const offloadLabel = $("#offload-mode-label");
     if (offloadLabel) {
@@ -127,7 +188,6 @@
     const offloadSelect = $("#offload-mode-select");
     if (offloadSelect) {
       offloadSelect.disabled = slmOnly || !isTag;
-      if (slmOnly) offloadSelect.value = "handoff";
     }
     ["llm-base-url", "llm-model", "llm-api-key"].forEach((id) => {
       const el = document.getElementById(id);
@@ -235,6 +295,7 @@
     btn.addEventListener("click", () => {
       const name = btn.dataset.tab;
       switchTab(name);
+      writeRoute(name, name === "files" ? previewRunId : "");
       if (name === "tables") loadLeaderboard(leaderboardMode);
       if (name === "files") loadHistory();
     });
@@ -270,10 +331,23 @@
   $$("#leaderboard-tabs .lb-tab").forEach((btn) => {
     btn.addEventListener("click", () => loadLeaderboard(btn.dataset.mode));
   });
+  $$("#leaderboard-subtabs .lb-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      leaderboardSection = btn.dataset.section || "slm_only";
+      loadLeaderboard(leaderboardMode);
+    });
+  });
+  $("#leaderboard-tables")?.addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".lb-model");
+    if (!btn) return;
+    openRunFromLeaderboard(btn.dataset.runId);
+  });
   $("#btn-view-results")?.addEventListener("click", () => {
     switchTab("files");
+    const rid = activeRunId || previewRunId || "";
+    writeRoute("files", rid);
     loadHistory().then(() => {
-      if (activeRunId) showResults(activeRunId);
+      if (rid) showResults(rid);
     });
   });
 
@@ -297,7 +371,7 @@
       mode: (fd.get("mode") || "swe_20filter").toString(),
       cluster: (fd.get("cluster") || "us").toString(),
       router_mode: router,
-      offload_mode: (fd.get("offload_mode") || "handoff").toString(),
+      offload_mode: router === "slm_only" ? "—" : (fd.get("offload_mode") || "handoff").toString(),
       model_path: modelPath,
       slm_base_url: slmBaseUrl,
       slm_model: slmModel,
@@ -510,57 +584,105 @@
     }
   }
 
+  function modelCell(val, runIds) {
+    const name = String(val ?? "");
+    if (name && runIds.has(name)) {
+      return `<td><button type="button" class="lb-model" data-run-id="${escapeHtml(name)}">${escapeHtml(name)}</button></td>`;
+    }
+    return `<td>${escapeHtml(name)}</td>`;
+  }
+
+  function leaderboardTableHtml(cols, rows, runIds) {
+    const body = rows
+      .map((r) => {
+        const modelName = r["模型"] ?? r.model ?? "";
+        const highlight =
+          previewRunId && modelName === previewRunId ? " class=\"lb-hl\"" : "";
+        return `<tr${highlight}>${cols
+          .map((c) => {
+            const val = r[c] ?? "";
+            if (c === "模型") return modelCell(val, runIds);
+            return `<td>${escapeHtml(val)}</td>`;
+          })
+          .join("")}</tr>`;
+      })
+      .join("");
+    return `<table class="leaderboard-table"><thead><tr>${cols
+      .map((c) => `<th>${escapeHtml(c)}</th>`)
+      .join("")}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  function sectionKey(title) {
+    const t = String(title || "").toLowerCase();
+    if (t.includes("entropy")) return "entropy";
+    if (t.includes("tag")) return "tag";
+    if (t.includes("slm") || t.includes("非 offload")) return "slm_only";
+    return "";
+  }
+
   async function loadLeaderboard(mode) {
     if (mode) leaderboardMode = mode;
     $$("#leaderboard-tabs .lb-tab").forEach((b) => {
       b.classList.toggle("active", b.dataset.mode === leaderboardMode);
     });
-    const thead = $("#leaderboard-table thead");
-    const tbody = $("#leaderboard-table tbody");
+    const sub = $("#leaderboard-subtabs");
+    const is20 = leaderboardMode === "swe_20filter";
+    if (sub) sub.hidden = !is20;
+    $$("#leaderboard-subtabs .lb-tab").forEach((b) => {
+      b.classList.toggle("active", b.dataset.section === leaderboardSection);
+    });
+    const host = $("#leaderboard-tables");
     const empty = $("#leaderboard-empty");
-    if (!thead || !tbody) return;
-    thead.innerHTML = "";
-    tbody.innerHTML = `<tr><td class="muted">加载中…</td></tr>`;
+    if (!host) return;
+    host.innerHTML = `<p class="muted" style="margin:0.6rem 0.75rem">加载中…</p>`;
     if (empty) empty.hidden = true;
     try {
-      const res = await fetch(
-        apiUrl(`/api/leaderboard?mode=${encodeURIComponent(leaderboardMode)}`)
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "leaderboard failed");
+      const [lbRes, runsRes] = await Promise.all([
+        fetch(apiUrl(`/api/leaderboard?mode=${encodeURIComponent(leaderboardMode)}`)),
+        fetch(apiUrl("/api/runs")),
+      ]);
+      const data = await lbRes.json();
+      if (!lbRes.ok) throw new Error(data.detail || "leaderboard failed");
+      const runsData = runsRes.ok ? await runsRes.json() : { runs: [] };
+      const runIds = new Set((runsData.runs || []).map((r) => r.run_id));
       const cols = data.columns || [];
-      const rows = data.rows || [];
-      if (!cols.length) {
-        tbody.innerHTML = "";
+      let sections =
+        data.sections && data.sections.length
+          ? data.sections
+          : [{ title: "", rows: data.rows || [] }];
+      if (is20) {
+        const picked = sections.filter((s) => sectionKey(s.title) === leaderboardSection);
+        sections = picked.length ? picked : sections.slice(0, 1);
+      }
+      const totalRows = sections.reduce((n, s) => n + ((s.rows || []).length), 0);
+      if (!cols.length || !totalRows) {
+        host.innerHTML = "";
         if (empty) {
           empty.hidden = false;
           empty.textContent = data.error || "该 mode 暂无行";
         }
         return;
       }
-      thead.innerHTML = `<tr>${cols.map((c) => `<th>${escapeHtml(c)}</th>`).join("")}</tr>`;
-      if (!rows.length) {
-        tbody.innerHTML = "";
-        if (empty) {
-          empty.hidden = false;
-          empty.textContent = "该 mode 暂无行";
-        }
-        return;
-      }
-      tbody.innerHTML = rows
-        .map((r) => {
-          const highlight =
-            previewRunId && (r["模型"] === previewRunId || r.model === previewRunId)
-              ? " class=\"lb-hl\""
-              : "";
-          return `<tr${highlight}>${cols
-            .map((c) => `<td>${escapeHtml(r[c] ?? "")}</td>`)
-            .join("")}</tr>`;
-        })
+      host.innerHTML = sections
+        .map((sec) => leaderboardTableHtml(cols, sec.rows || [], runIds))
         .join("");
     } catch (ex) {
-      tbody.innerHTML = `<tr><td class="error">${escapeHtml(String(ex))}</td></tr>`;
+      host.innerHTML = `<p class="error" style="margin:0.6rem 0.75rem">${escapeHtml(String(ex))}</p>`;
     }
+  }
+
+  async function openRunFromLeaderboard(runId) {
+    const id = String(runId || "").trim();
+    if (!id) return;
+    switchTab("files");
+    await loadHistory();
+    const found = $(`#run-list li[data-run-id="${CSS.escape(id)}"]`);
+    if (!found) {
+      alert(`没有同名目录 ${id}`);
+      return;
+    }
+    await showResults(id);
+    writeRoute("files", id);
   }
 
   async function loadHistory() {
@@ -588,7 +710,10 @@
           <span class="meta">${escapeHtml(r.mode || "")} · ${escapeHtml(r.router_mode || "")}<br>${escapeHtml(r.updated_at || "")}</span>
           ${stopBtn}
         `;
-        li.addEventListener("click", () => showResults(r.run_id));
+        li.addEventListener("click", () => {
+          showResults(r.run_id);
+          writeRoute("files", r.run_id);
+        });
         li.querySelector("[data-stop]")?.addEventListener("click", (ev) => {
           ev.stopPropagation();
           stopRun(r.run_id);
@@ -750,14 +875,14 @@
 
   async function loadRunFiles(runId, resetPreview) {
     if (resetPreview) {
-      previewCache = { path: "", text: "", trajData: null };
+      previewCache = { path: "", text: "", trajData: null, traces: null };
       openFileKey = "";
       $("#result-summary").textContent = "加载中…";
       $("#file-tree").innerHTML = "";
       $("#preview-path").textContent = "点击左侧文件预览";
       $("#traj-view-toggle").hidden = true;
       $("#preview-body").innerHTML =
-        '<p class="muted">左侧按文件夹选文件；轨迹可在「format / JSON」间切换。</p>';
+        '<p class="muted">左侧选 run 与文件；轨迹可在「format / JSON / raw」间切换。</p>';
     }
     const res = await fetch(apiUrl(`/api/runs/${encodeURIComponent(runId)}/results`));
     const data = await res.json();
@@ -814,18 +939,41 @@
     }
   }
 
-  function setTrajViewMode(mode) {
-    trajViewMode = mode;
-    $$("#traj-view-toggle .traj-btn").forEach((b) => {
-      b.classList.toggle("active", b.dataset.view === mode);
+  function syncTrajToggles() {
+    $$("#traj-view-toggle [data-view]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.view === trajViewMode);
     });
-    if (previewCache.trajData) {
-      renderTrajPreview();
-    }
+    $$("#traj-fold-toggle [data-fold]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.fold === trajFoldMode);
+    });
+    const fold = $("#traj-fold-toggle");
+    if (fold) fold.hidden = trajViewMode === "json";
   }
 
-  $$("#traj-view-toggle .traj-btn").forEach((btn) => {
+  function setTrajViewMode(mode) {
+    trajViewMode = mode;
+    syncTrajToggles();
+    if (previewCache.trajData) renderTrajPreview();
+  }
+
+  function setTrajFoldMode(mode) {
+    trajFoldMode = mode === "open" ? "open" : "close";
+    syncTrajToggles();
+    const bubbles = $$("#preview-body details.chat-bubble");
+    if (bubbles.length) {
+      bubbles.forEach((el) => {
+        el.open = trajFoldMode === "open";
+      });
+      return;
+    }
+    if (previewCache.trajData && trajViewMode === "chat") renderTrajPreview();
+  }
+
+  $$("#traj-view-toggle [data-view]").forEach((btn) => {
     btn.addEventListener("click", () => setTrajViewMode(btn.dataset.view));
+  });
+  $$("#traj-fold-toggle [data-fold]").forEach((btn) => {
+    btn.addEventListener("click", () => setTrajFoldMode(btn.dataset.fold));
   });
 
   function renderTrajPreview() {
@@ -835,9 +983,141 @@
     if (trajViewMode === "json") {
       const pretty = JSON.stringify(data, null, 2);
       body.innerHTML = `<pre class="preview-raw">${escapeHtml(pretty.slice(0, 500000))}</pre>`;
+    } else if (trajViewMode === "raw") {
+      body.innerHTML = renderTrajChat(data, previewCache.traces || []);
     } else {
       body.innerHTML = renderTrajChat(data);
     }
+    syncTrajToggles();
+  }
+
+  function runFileUrl(runId, filePath) {
+    return apiUrl(
+      `/api/runs/${encodeURIComponent(runId)}/files/${filePath
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`
+    );
+  }
+
+  function firstUserText(traj) {
+    for (const m of traj.messages || []) {
+      if (String(m.role || "").toLowerCase() !== "user") continue;
+      return typeof m.content === "string" ? m.content : JSON.stringify(m.content || "");
+    }
+    return "";
+  }
+
+  function flattenText(s) {
+    return String(s || "").replace(/\s+/g, " ").trim();
+  }
+
+  function pickTraceTurns(traj, rows) {
+    const iid = String(traj.instance_id || "").toLowerCase();
+    const user = flattenText(firstUserText(traj));
+    const bySid = new Map();
+    for (const r of rows) {
+      const sid = r.sid || "_";
+      if (!bySid.has(sid)) bySid.set(sid, []);
+      bySid.get(sid).push(r);
+    }
+    let best = [];
+    let bestScore = -1;
+    for (const turns of bySid.values()) {
+      const task = flattenText(turns[0]?.task || "");
+      let score = 0;
+      if (iid && task.toLowerCase().includes(iid)) score += 8;
+      if (task && user.includes(task)) score += 10;
+      const distinctive = task
+        .replace(/^<pr_description>\s*/i, "")
+        .replace(/^consider the following pr description:\s*/i, "")
+        .trim();
+      if (distinctive.length >= 12) {
+        const needle = distinctive.slice(0, 40);
+        if (user.toLowerCase().includes(needle.toLowerCase())) score += 12;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = turns;
+      }
+    }
+    if (bestScore <= 0) return [];
+    return [...best].sort((a, b) => (a.turn || 0) - (b.turn || 0));
+  }
+
+  function annotateTraceTurns(traj, turns) {
+    const kinds = [];
+    let i = 0;
+    for (const m of traj.messages || []) {
+      const role = String(m.role || "").toLowerCase();
+      const content = typeof m.content === "string" ? m.content : "";
+      if (role === "assistant") {
+        kinds[i] = "assistant";
+        i += 1;
+      } else if (role === "user" && /no tool calls found/i.test(content)) {
+        kinds[i] = "no_tool";
+        i += 1;
+      }
+    }
+    return turns.map((t, idx) => ({ ...t, trajKind: kinds[idx] || "" }));
+  }
+
+  async function fetchJsonl(runId, filePath) {
+    const res = await fetch(runFileUrl(runId, filePath));
+    if (!res.ok) return [];
+    const text = await res.text();
+    return text
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  }
+
+  async function loadTurnTrace(runId, traj) {
+    const paths = [
+      "logs/adapter_stats/turn_trace.jsonl",
+      "logs/adapter_stats/token_usage/turn_trace.jsonl",
+    ];
+    let picked = [];
+    for (const p of paths) {
+      try {
+        const rows = await fetchJsonl(runId, p);
+        picked = pickTraceTurns(traj, rows);
+        if (picked.length) break;
+      } catch {
+        /* try next */
+      }
+    }
+    if (!picked.length) return [];
+    try {
+      const usageRows = await fetchJsonl(runId, "logs/adapter_stats/turns.jsonl");
+      const byTurn = new Map();
+      for (const row of usageRows) {
+        if (row.sid !== picked[0].sid) continue;
+        byTurn.set(row.turn, row);
+      }
+      picked = picked.map((t) => {
+        const u = byTurn.get(t.turn);
+        return u
+          ? {
+              ...t,
+              slm_prompt_tokens: u.slm_prompt_tokens,
+              slm_completion_tokens: u.slm_completion_tokens,
+              llm_prompt_tokens: u.llm_prompt_tokens,
+              llm_completion_tokens: u.llm_completion_tokens,
+            }
+          : t;
+      });
+    } catch {
+      /* tokens optional */
+    }
+    return annotateTraceTurns(traj, picked);
   }
 
   async function previewFile(runId, filePath) {
@@ -857,7 +1137,7 @@
       const text = await res.text();
       if (!res.ok) throw new Error(text || res.statusText);
 
-      previewCache = { path: filePath, text, trajData: null };
+      previewCache = { path: filePath, text, trajData: null, traces: null };
 
       if (filePath.endsWith(".traj.json")) {
         try {
@@ -866,6 +1146,7 @@
           body.innerHTML = `<pre class="preview-raw">${escapeHtml(text.slice(0, 200000))}</pre>`;
           return;
         }
+        previewCache.traces = await loadTurnTrace(runId, previewCache.trajData);
         toggle.hidden = false;
         setTrajViewMode(trajViewMode || "chat");
         return;
@@ -914,14 +1195,191 @@
       .replace(/&lt;\|\/llm_offload\|&gt;/g, '<span class="offload-token">&lt;|/llm_offload|&gt;</span>');
   }
 
-  function renderTrajChat(data) {
+  function clipOneLine(s, n = 80) {
+    const t = String(s || "").replace(/\s+/g, " ").trim();
+    if (!t) return "";
+    return t.length > n ? `${t.slice(0, n)}…` : t;
+  }
+
+  function messageBlob(m) {
+    const content =
+      typeof m.content === "string"
+        ? m.content
+        : m.content != null
+          ? JSON.stringify(m.content)
+          : "";
+    return [
+      m.reasoning_content || "",
+      m.thinking || "",
+      content,
+      m.tool_calls ? JSON.stringify(m.tool_calls) : "",
+    ].join("\n");
+  }
+
+  function messageUsage(m) {
+    const extra = m && m.extra && typeof m.extra === "object" ? m.extra : {};
+    const nested = extra.response && extra.response.usage;
+    if (nested && typeof nested === "object") return nested;
+    if (m && m.usage && typeof m.usage === "object") return m.usage;
+    return {};
+  }
+
+  function messageHasOffload(m) {
+    if (!m || typeof m !== "object") return false;
+    if (String(m.role || "").toLowerCase() !== "assistant") return false;
+    const usage = messageUsage(m);
+    return Number(usage.llm_prompt_tokens || 0) > 0 || Number(usage.llm_completion_tokens || 0) > 0;
+  }
+
+  function toolCallBits(m) {
+    const names = [];
+    const cmds = [];
+    for (const tc of m.tool_calls || []) {
+      const fn = tc.function || {};
+      if (fn.name) names.push(fn.name);
+      let args = fn.arguments;
+      if (typeof args === "string") {
+        try {
+          args = JSON.parse(args);
+        } catch {
+          args = { command: args };
+        }
+      }
+      if (args && typeof args === "object" && args.command) cmds.push(String(args.command));
+    }
+    return { names, cmds };
+  }
+
+  function isNoToolUser(m) {
+    const role = String(m.role || "").toLowerCase();
+    const content = typeof m.content === "string" ? m.content : "";
+    return role === "user" && /no tool calls found/i.test(content);
+  }
+
+  function bubbleSummary(m) {
+    const role = String(m.role || "unknown").toUpperCase();
+    const bits = [role];
+    const content =
+      typeof m.content === "string"
+        ? m.content
+        : m.content != null
+          ? JSON.stringify(m.content)
+          : "";
+    if (role === "ASSISTANT") {
+      const { names, cmds } = toolCallBits(m);
+      if (names.length) bits.push(names.join(","));
+      if (cmds.length) bits.push(clipOneLine(cmds.join(" | ")));
+      else bits.push(clipOneLine(m.reasoning_content || m.thinking || content));
+    } else if (role === "TOOL") {
+      /* summary stays "TOOL" */
+    } else {
+      bits.push(clipOneLine(content || m.reasoning_content || ""));
+    }
+    return bits.filter(Boolean).join(" · ");
+  }
+
+  function renderChatBubble(m, openAttr) {
+    const role = m.role || "unknown";
+    const parts = [];
+    const reasoning = m.reasoning_content || m.thinking || "";
+    const content =
+      typeof m.content === "string" ? m.content : m.content != null ? JSON.stringify(m.content, null, 2) : "";
+    if (reasoning) {
+      parts.push(
+        `<div class="chat-section-label">reasoning</div><div class="chat-text">${highlightOffload(reasoning)}</div>`
+      );
+    }
+    if (content) {
+      parts.push(
+        `<div class="chat-section-label">content</div><div class="chat-text">${highlightOffload(content)}</div>`
+      );
+    }
+    if (m.tool_calls && m.tool_calls.length) {
+      parts.push(
+        `<div class="chat-section-label">tool_calls</div><div class="chat-text">${highlightOffload(
+          JSON.stringify(m.tool_calls, null, 2)
+        )}</div>`
+      );
+    }
+    if (m.tool_call_id) {
+      parts.push(
+        `<div class="chat-section-label">tool_call_id</div><div class="chat-text">${escapeHtml(m.tool_call_id)}</div>`
+      );
+    }
+    if (!parts.length) {
+      parts.push(`<div class="chat-text muted">(empty)</div>`);
+    }
+    const off = messageHasOffload(m);
+    const badge = off ? `<span class="offload-badge">OFFLOAD</span>` : "";
+    const offCls = off ? " has-offload" : "";
+    return `<details class="chat-bubble role-${escapeHtml(role)}${offCls}"${openAttr}><summary class="chat-summary"><span class="chat-summary-text">${escapeHtml(
+      bubbleSummary(m)
+    )}</span>${badge}</summary><div class="chat-body">${parts.join("")}</div></details>`;
+  }
+
+  function shouldShowRawTrace(t, m) {
+    if (!t) return false;
+    if (t.trajKind === "no_tool" || isNoToolUser(m)) return true;
+    if (t.offloaded) return true;
+    const blob = [t.slm_raw, t.slm_thinking, t.slm_output].join("\n");
+    return blob.includes("<|llm_offload|>");
+  }
+
+  function renderRawBubble(t, openAttr) {
+    const bits = ["ASSISTANT", "RAW"];
+    if (t.offload_n != null) bits.push(`N=${t.offload_n}`);
+    if (t.trajKind === "no_tool") bits.push("no tool call");
+    if (t.slm_completion_tokens != null || t.slm_prompt_tokens != null) {
+      bits.push(`slm ${t.slm_prompt_tokens || 0}/${t.slm_completion_tokens || 0}`);
+    }
+    bits.push(clipOneLine(t.slm_raw || t.slm_thinking || t.slm_output || ""));
+    const parts = [];
+    if (t.slm_raw) {
+      parts.push(
+        `<div class="chat-section-label">slm_raw</div><div class="chat-text">${highlightOffload(t.slm_raw)}</div>`
+      );
+    } else {
+      if (t.slm_thinking) {
+        parts.push(
+          `<div class="chat-section-label">slm_thinking</div><div class="chat-text">${highlightOffload(t.slm_thinking)}</div>`
+        );
+      }
+      if (t.slm_output) {
+        parts.push(
+          `<div class="chat-section-label">slm_output</div><div class="chat-text">${highlightOffload(t.slm_output)}</div>`
+        );
+      }
+    }
+    if (!parts.length) {
+      parts.push(`<div class="chat-text muted">(empty SLM output)</div>`);
+    }
+    const noTool = t.trajKind === "no_tool";
+    const off = Boolean(t.offloaded);
+    const badges = [`<span class="offload-badge raw-flag">RAW</span>`];
+    if (off) badges.push(`<span class="offload-badge">OFFLOAD</span>`);
+    if (noTool) badges.push(`<span class="offload-badge raw-fail-badge">NO TOOL</span>`);
+    const cls = `chat-bubble role-assistant raw-turn${off ? " has-offload" : ""}${noTool ? " raw-no-tool" : ""}`;
+    return `<details class="${cls}"${openAttr}><summary class="chat-summary"><span class="chat-summary-text">${escapeHtml(
+      bits.filter(Boolean).join(" · ")
+    )}</span>${badges.join("")}</summary><div class="chat-body">${parts.join("")}</div></details>`;
+  }
+
+  function renderTrajChat(data, traces) {
     const msgs = Array.isArray(data.messages) ? data.messages : [];
+    const assistantMsgs = msgs.filter((m) => String(m.role || "").toLowerCase() === "assistant");
+    const offloadCount = assistantMsgs.filter(messageHasOffload).length;
+    const insertRaw = Array.isArray(traces);
     const meta = [];
     if (data.instance_id) meta.push(`instance: ${escapeHtml(data.instance_id)}`);
     if (data.info?.exit_status) meta.push(`exit: ${escapeHtml(String(data.info.exit_status))}`);
-    const head = meta.length
-      ? `<p class="muted mono" style="margin:0 0 0.75rem">${meta.join(" · ")}</p>`
-      : "";
+    meta.push(`${msgs.length} messages`);
+    if (assistantMsgs.length) {
+      const pct = ((offloadCount / assistantMsgs.length) * 100).toFixed(1);
+      meta.push(`${offloadCount}/${assistantMsgs.length} assistant offload (${pct}%)`);
+    } else {
+      meta.push(`${offloadCount} offload`);
+    }
+    const head = `<p class="muted mono chat-meta">${meta.join(" · ")}</p>`;
 
     if (!msgs.length) {
       return `${head}<p class="muted">无 messages</p><pre class="preview-raw">${escapeHtml(
@@ -929,50 +1387,28 @@
       )}</pre>`;
     }
 
+    const openAttr = trajFoldMode === "open" ? " open" : "";
+    let traceI = 0;
     const bubbles = msgs
       .map((m) => {
-        const role = m.role || "unknown";
-        const parts = [];
-        const reasoning = m.reasoning_content || m.thinking || "";
-        const content = typeof m.content === "string" ? m.content : m.content != null ? JSON.stringify(m.content, null, 2) : "";
-        if (reasoning) {
-          parts.push(
-            `<div class="chat-section-label">reasoning</div><div class="chat-text">${highlightOffload(
-              reasoning
-            )}</div>`
-          );
+        let extra = "";
+        if (insertRaw) {
+          const role = String(m.role || "").toLowerCase();
+          if (role === "assistant" || isNoToolUser(m)) {
+            const t = traces[traceI];
+            traceI += 1;
+            if (shouldShowRawTrace(t, m)) extra = renderRawBubble(t, openAttr);
+          }
         }
-        if (content) {
-          parts.push(
-            `<div class="chat-section-label">content</div><div class="chat-text">${highlightOffload(
-              content
-            )}</div>`
-          );
-        }
-        if (m.tool_calls && m.tool_calls.length) {
-          parts.push(
-            `<div class="chat-section-label">tool_calls</div><div class="chat-text">${highlightOffload(
-              JSON.stringify(m.tool_calls, null, 2)
-            )}</div>`
-          );
-        }
-        if (m.tool_call_id) {
-          parts.push(
-            `<div class="chat-section-label">tool_call_id</div><div class="chat-text">${escapeHtml(
-              m.tool_call_id
-            )}</div>`
-          );
-        }
-        if (!parts.length) {
-          parts.push(`<div class="chat-text muted">(empty)</div>`);
-        }
-        return `<div class="chat-bubble role-${escapeHtml(role)}"><div class="chat-role">${escapeHtml(
-          role
-        )}</div>${parts.join("")}</div>`;
+        return extra + renderChatBubble(m, openAttr);
       })
       .join("");
 
-    return `${head}<div class="chat-thread">${bubbles}</div>`;
+    const unmatched =
+      insertRaw && !traces.length
+        ? `<p class="muted">没有匹配到 adapter turn_trace，轨迹按 format 显示。可打开 logs/adapter_stats/turn_trace.jsonl。</p>`
+        : "";
+    return `${head}${unmatched}<div class="chat-thread">${bubbles}</div>`;
   }
 
   function escapeHtml(s) {
@@ -982,4 +1418,10 @@
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
   }
+
+  window.addEventListener("hashchange", () => {
+    if (applyingRoute) return;
+    applyRoute(parseRoute());
+  });
+  applyRoute(parseRoute());
 })();

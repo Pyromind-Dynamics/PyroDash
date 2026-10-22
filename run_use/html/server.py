@@ -368,6 +368,114 @@ def _read_json(path: Path) -> dict[str, Any]:
         return {}
 
 
+def _secret_meta(value: str) -> dict[str, Any]:
+    text = str(value or "")
+    return {"set": bool(text.strip()), "len": len(text)}
+
+
+def _stored_offload_mode(router_mode: str, offload_mode: str) -> str:
+    if (router_mode or "") == "slm_only":
+        return "—"
+    return (offload_mode or "handoff").strip() or "handoff"
+
+
+def _env_offload_mode(router_mode: str, offload_mode: str) -> str:
+    if (router_mode or "") == "slm_only":
+        return "handoff"
+    mode = (offload_mode or "handoff").strip().lower()
+    if mode in ("—", "-", "n/a", ""):
+        return "handoff"
+    return mode
+
+
+def _write_run_config(
+    run_dir: Path,
+    body: StartRunRequest,
+    *,
+    run_id: str,
+    resumed: bool,
+    cluster: str,
+    slm_backend: str,
+    slm_port: int,
+    n_concurrent: int,
+    use_llm: str,
+    vllm_env: Path,
+    python_bin: Path,
+    vllm_bin: Path,
+    harness_py: Path,
+    mini_extra: str,
+    planned: Optional[int],
+) -> Path:
+    """Persist the launch form so a run can be reproduced later."""
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    path = run_dir / "logs" / "config.json"
+    prev = _read_json(path)
+    slm_source = "local" if (body.model_path or "").strip() else "remote"
+    config: dict[str, Any] = {
+        "saved_at": prev.get("saved_at") or now,
+        "updated_at": now,
+        "source": "web_ui",
+        "run_id": run_id,
+        "resume": resumed,
+        "router_mode": body.router_mode,
+        "offload_mode": _stored_offload_mode(body.router_mode, body.offload_mode),
+        "use_llm": use_llm == "true",
+        "mode": body.mode,
+        "cluster": cluster,
+        "slm": {
+            "source": slm_source,
+            "model_path": (body.model_path or "").strip(),
+            "base_url": (body.slm_base_url or "").strip(),
+            "model": (body.slm_model or "").strip(),
+            "api_key": _secret_meta(body.slm_api_key),
+            "backend": slm_backend,
+            "port": slm_port,
+            "cuda_visible_devices": body.cuda_visible_devices,
+            "vllm_extra_args": (body.vllm_extra_args or "").strip(),
+            "sglang_extra_args": (body.sglang_extra_args or "").strip(),
+        },
+        "llm": {
+            "base_url": (body.llm_base_url or "").strip(),
+            "model": (body.llm_model or "").strip(),
+            "api_key": _secret_meta(body.llm_api_key),
+        },
+        "eval": {
+            "mini_extra_args": mini_extra,
+            "workers": body.workers,
+            "harness_workers": body.harness_workers,
+            "step_limit": max(1, int(body.step_limit or 150)),
+            "n_concurrent": n_concurrent,
+            "n_tasks": (body.n_tasks or "").strip(),
+            "planned_instances": planned,
+            "deepswe_tasks": (body.deepswe_tasks or "").strip(),
+            "tb_dataset": body.tb_dataset,
+        },
+        "ports": {
+            "adapter_port": body.adapter_port,
+            "slm_port": slm_port,
+        },
+        "envs": {
+            "vllm_env": str(vllm_env),
+            "python_bin": str(python_bin),
+            "vllm_bin": str(vllm_bin),
+            "harness_python": str(harness_py),
+        },
+    }
+    if resumed:
+        history = list(prev.get("resume_history") or [])
+        history.append({"at": now, "run_id": run_id})
+        config["resume_history"] = history
+        if prev:
+            config["original"] = {
+                k: prev[k]
+                for k in ("saved_at", "router_mode", "offload_mode", "slm", "llm", "eval")
+                if k in prev
+            }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n")
+    return path
+
+
 def _tail_file(path: Path, max_bytes: int = 24_000) -> str:
     if not path.is_file():
         return ""
@@ -697,7 +805,7 @@ def start_run(body: StartRunRequest) -> JSONResponse:
             "CLUSTER": cluster,
             "RUN_ID": run_id,
             "ROUTER_MODE": body.router_mode,
-            "OFFLOAD_MODE": body.offload_mode,
+            "OFFLOAD_MODE": _env_offload_mode(body.router_mode, body.offload_mode),
             "USE_LLM": use_llm,
             "ADAPTER_PORT": str(body.adapter_port),
             "SLM_BACKEND": slm_backend,
@@ -779,7 +887,7 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         "mode": body.mode,
         "cluster": cluster,
         "router_mode": body.router_mode,
-        "offload_mode": body.offload_mode,
+        "offload_mode": _stored_offload_mode(body.router_mode, body.offload_mode),
         "phase": "starting_adapter",
         "message": "resuming from web UI" if resumed else "launched from web UI",
         "updated_at": now,
@@ -795,6 +903,23 @@ def start_run(body: StartRunRequest) -> JSONResponse:
     status.pop("finished_at", None)
     status_path = run_dir / "status.json"
     status_path.write_text(json.dumps(status, indent=2) + "\n")
+    _write_run_config(
+        run_dir,
+        body,
+        run_id=run_id,
+        resumed=resumed,
+        cluster=cluster,
+        slm_backend=slm_backend,
+        slm_port=slm_port,
+        n_concurrent=n_concurrent,
+        use_llm=use_llm,
+        vllm_env=vllm_env,
+        python_bin=python_bin,
+        vllm_bin=vllm_bin,
+        harness_py=harness_py,
+        mini_extra=mini_extra,
+        planned=planned,
+    )
 
     shell_cmd = (
         f"exec bash {shlex.quote(str(RUN_SH))} >> {shlex.quote(str(web_log))} 2>&1"

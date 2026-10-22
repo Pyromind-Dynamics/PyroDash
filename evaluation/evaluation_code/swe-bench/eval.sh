@@ -218,6 +218,13 @@ MINI_ARGS+=(-o "${OUT_DIR}")
 echo "[eval] mini-extra argv:"
 printf '  %q\n' "${MINI_ARGS[@]}"
 
+# mini-swe-agent always wraps the batch in Rich Live. If the parent exported
+# FORCE_COLOR (Cursor/CI often set FORCE_COLOR=0/1), Rich treats a redirected
+# eval.log as a TTY and dumps spinner / cursor-up frames into the file.
+# TTY_COMPATIBLE=0 forces the line-oriented INFO log used when stdout is a file.
+export TTY_COMPATIBLE=0
+unset FORCE_COLOR
+
 if [[ "${CLUSTER}" == "shanghai" ]]; then
   # Aliyun images + docker-rt. Keep bash -lc (do not install docker_rt_testbed_exec.sh).
   export DOCKER_HOST="${DOCKER_HOST:-unix:///tmp/docker-rt.sock}"
