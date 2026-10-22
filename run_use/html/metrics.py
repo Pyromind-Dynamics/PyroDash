@@ -188,9 +188,57 @@ def _load_adapter_totals(stats_dir: Path) -> dict[str, Any]:
     return out
 
 
+_AGGREGATE_REPORT_KEYS = (
+    "resolved_instances",
+    "submitted_instances",
+    "empty_patch_instances",
+    "completed_instances",
+    "unresolved_instances",
+)
+
+
+def _is_aggregate_harness_report(data: dict[str, Any]) -> bool:
+    """True for the run-level swebench JSON (resolved_instances / submitted_ids / …)."""
+    return any(key in data for key in _AGGREGATE_REPORT_KEYS)
+
+
+def _instance_resolved_flags(data: dict[str, Any]) -> Optional[list[bool]]:
+    """Per-instance report.json: ``{instance_id: {resolved, tests_status, …}}``.
+
+    Return one bool per instance, or None if this is not that shape.
+    """
+    if not data or _is_aggregate_harness_report(data):
+        return None
+    if not all(isinstance(v, dict) for v in data.values()):
+        return None
+    flags: list[bool] = []
+    for value in data.values():
+        if not (
+            "resolved" in value
+            or "tests_status" in value
+            or "patch_successfully_applied" in value
+        ):
+            return None
+        flags.append(value.get("resolved") is True)
+    return flags
+
+
+def _rel_report(report: Path, root: Path) -> str:
+    try:
+        return str(report.relative_to(root))
+    except ValueError:
+        return str(report)
+
+
 def _harness_summary_from_report(data: dict[str, Any], report: Path, *, root: Path) -> dict[str, Any]:
-    """Extract resolved/submitted totals from a swebench run report JSON."""
+    """Extract resolved/submitted totals from a swebench *run-level* report JSON.
+
+    Per-instance ``verified/<id>/report.json`` is ignored here (resolved stays
+    None). Sum those in ``_parse_harness`` only when no aggregate report exists.
+    """
     summary: dict[str, Any] = {"resolved": None, "total": None, "primary_report": None}
+    if _instance_resolved_flags(data) is not None:
+        return summary
     for key in ("resolved_instances", "resolved", "num_resolved"):
         if key in data and isinstance(data[key], (int, float)):
             summary["resolved"] = int(data[key])
@@ -211,23 +259,16 @@ def _harness_summary_from_report(data: dict[str, Any], report: Path, *, root: Pa
             else:
                 summary["total"] = int(empty_n)
     if summary["resolved"] is not None:
-        try:
-            summary["primary_report"] = str(report.relative_to(root))
-        except ValueError:
-            summary["primary_report"] = str(report)
-        return summary
-    if data and all(isinstance(v, dict) for v in data.values()):
-        summary["resolved"] = sum(1 for v in data.values() if v.get("resolved") is True)
-        summary["total"] = len(data)
-        try:
-            summary["primary_report"] = str(report.relative_to(root))
-        except ValueError:
-            summary["primary_report"] = str(report)
+        summary["primary_report"] = _rel_report(report, root)
     return summary
 
 
 def _iter_harness_report_candidates(eval_dir: Path, run_dir: Optional[Path] = None) -> list[Path]:
-    """Locate swebench harness reports (verified/ or stray CWD dumps)."""
+    """Locate swebench harness reports (verified/ or stray CWD dumps).
+
+    Run-level JSON is listed first so callers that still first-hit a parseable
+    ``resolved`` do not pick ``verified/<instance>/report.json``.
+    """
     seen: set[Path] = set()
     out: list[Path] = []
 
@@ -242,8 +283,9 @@ def _iter_harness_report_candidates(eval_dir: Path, run_dir: Optional[Path] = No
         out.append(p)
 
     verified = eval_dir / "verified"
+    # Top-level verified/*.json is the run summary (e.g. openai__*.pred.json).
     if verified.is_dir():
-        for report in sorted(verified.rglob("*.json")):
+        for report in sorted(verified.glob("*.json")):
             _add(report)
     for report in sorted(eval_dir.glob("*.json")):
         _add(report)
@@ -254,27 +296,46 @@ def _iter_harness_report_candidates(eval_dir: Path, run_dir: Optional[Path] = No
     if run_dir is not None:
         search_roots.extend([run_dir, run_dir.parent])
     search_roots.append(eval_dir.parent)
-    for root in search_roots:
-        if not root.is_dir():
+    for search_root in search_roots:
+        if not search_root.is_dir():
             continue
-        for report in sorted(root.glob("*.json")):
+        for report in sorted(search_root.glob("*.json")):
             data = _read_json(report)
-            if isinstance(data, dict) and (
-                "resolved_instances" in data or "empty_patch_instances" in data
-            ):
+            if isinstance(data, dict) and _is_aggregate_harness_report(data):
                 _add(report)
+
+    # Per-instance reports last — only used if no aggregate file exists.
+    if verified.is_dir():
+        for report in sorted(verified.rglob("*.json")):
+            _add(report)
     return out
 
 
 def _parse_harness(eval_dir: Path, *, run_dir: Optional[Path] = None) -> dict[str, Any]:
+    """Prefer the run-level harness JSON; else sum per-instance report.json."""
     summary: dict[str, Any] = {"resolved": None, "total": None, "primary_report": None}
+    instance_resolved = 0
+    instance_total = 0
+    instance_report: Optional[Path] = None
     for report in _iter_harness_report_candidates(eval_dir, run_dir=run_dir):
         data = _read_json(report)
         if not isinstance(data, dict):
             continue
+        flags = _instance_resolved_flags(data)
+        if flags is not None:
+            instance_resolved += sum(1 for flag in flags if flag)
+            instance_total += len(flags)
+            if instance_report is None:
+                instance_report = report
+            continue
         parsed = _harness_summary_from_report(data, report, root=eval_dir)
         if parsed.get("resolved") is not None:
             return parsed
+    if instance_total:
+        summary["resolved"] = instance_resolved
+        summary["total"] = instance_total
+        if instance_report is not None:
+            summary["primary_report"] = _rel_report(instance_report, eval_dir)
     return summary
 
 

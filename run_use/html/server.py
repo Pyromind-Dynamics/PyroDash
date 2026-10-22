@@ -479,7 +479,7 @@ def _compute_progress(run_dir: Path, status: dict[str, Any]) -> dict[str, Any]:
 
 def _parse_harness_summary(eval_dir: Path) -> dict[str, Any]:
     # Delegate to metrics so verified/ + stray CWD reports + empty-preds → 0/N stay in sync.
-    from metrics import _iter_harness_report_candidates, _harness_summary_from_report, _resolved_from_preds
+    from metrics import _iter_harness_report_candidates, _parse_harness, _resolved_from_preds
 
     preds = eval_dir / "runs" / "preds.json"
     summary: dict[str, Any] = {
@@ -498,20 +498,11 @@ def _parse_harness_summary(eval_dir: Path) -> dict[str, Any]:
         except ValueError:
             summary["report_files"].append(str(report))
 
-    for report in reports:
-        data = None
-        try:
-            data = json.loads(report.read_text())
-        except Exception:
-            continue
-        if not isinstance(data, dict):
-            continue
-        parsed = _harness_summary_from_report(data, report, root=eval_dir)
-        if parsed.get("resolved") is not None:
-            summary["resolved"] = parsed["resolved"]
-            summary["total"] = parsed.get("total")
-            summary["primary_report"] = parsed.get("primary_report")
-            break
+    parsed = _parse_harness(eval_dir, run_dir=run_dir)
+    summary["resolved"] = parsed.get("resolved")
+    summary["total"] = parsed.get("total")
+    if parsed.get("primary_report"):
+        summary["primary_report"] = parsed["primary_report"]
 
     if summary["resolved"] is None:
         pred_resolved, pred_n = _resolved_from_preds(eval_dir)
