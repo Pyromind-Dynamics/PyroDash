@@ -68,6 +68,8 @@ def call_openai_chat_sync(
     sampling: dict[str, Any] | None = None,
     enable_thinking: bool | None = None,
     reasoning_effort: str | None = None,
+    # "enable_thinking": Qwen/vLLM chat_template_kwargs; "thinking": DeepSeek thinking.type
+    thinking_kwarg: str = "enable_thinking",
     timeout: float = 600.0,
 ) -> tuple[str, str, dict[str, Any] | None, list[dict[str, Any]]]:
     if max_tokens is not None and max_tokens <= 0:
@@ -98,11 +100,19 @@ def call_openai_chat_sync(
     if openai_tools:
         body["tools"] = openai_tools
     if enable_thinking is not None:
-        chat_kwargs: dict[str, Any] = {"enable_thinking": bool(enable_thinking)}
-        if enable_thinking and reasoning_effort:
-            chat_kwargs["reasoning_effort"] = reasoning_effort
-            body["reasoning_effort"] = reasoning_effort
-        body["chat_template_kwargs"] = chat_kwargs
+        on = bool(enable_thinking)
+        if thinking_kwarg == "thinking":
+            # DeepSeek-V4.x: top-level thinking.type + reasoning_effort only
+            body["thinking"] = {"type": "enabled" if on else "disabled"}
+            if on and reasoning_effort:
+                body["reasoning_effort"] = reasoning_effort
+        else:
+            # Qwen/vLLM: chat_template_kwargs.enable_thinking
+            chat_kwargs: dict[str, Any] = {"enable_thinking": on}
+            if on and reasoning_effort:
+                chat_kwargs["reasoning_effort"] = reasoning_effort
+                body["reasoning_effort"] = reasoning_effort
+            body["chat_template_kwargs"] = chat_kwargs
     apply_sampling(body, sampling)
 
     try:

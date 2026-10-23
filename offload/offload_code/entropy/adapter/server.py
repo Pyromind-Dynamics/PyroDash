@@ -410,7 +410,9 @@ class OffloadAdapter:
                     max_tokens=max_tokens,
                     tools=tools_schema,
                     sampling=self._llm_sampling or None,
+                    enable_thinking=True if self.llm_reasoning_effort else None,
                     reasoning_effort=self.llm_reasoning_effort,
+                    thinking_kwarg="thinking",
                 )
                 llm_text = glm_content or ""
                 llm_think_text = glm_think or ""

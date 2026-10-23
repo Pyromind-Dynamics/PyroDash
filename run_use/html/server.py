@@ -434,11 +434,16 @@ def _write_run_config(
             "vllm_extra_args": (body.vllm_extra_args or "").strip(),
             "sglang_extra_args": (body.sglang_extra_args or "").strip(),
         },
-        "llm": {
-            "base_url": (body.llm_base_url or "").strip(),
-            "model": (body.llm_model or "").strip(),
-            "api_key": _secret_meta(body.llm_api_key),
-        },
+        # slm_only never calls the LLM; omit placeholders so config stays honest.
+        "llm": (
+            None
+            if body.router_mode == "slm_only" or use_llm != "true"
+            else {
+                "base_url": (body.llm_base_url or "").strip(),
+                "model": (body.llm_model or "").strip(),
+                "api_key": _secret_meta(body.llm_api_key),
+            }
+        ),
         "eval": {
             "mini_extra_args": mini_extra,
             "workers": body.workers,
@@ -816,9 +821,10 @@ def start_run(body: StartRunRequest) -> JSONResponse:
             "STEP_LIMIT": str(max(1, int(body.step_limit or 150))),
             "N_CONCURRENT": str(n_concurrent),
             "CUDA_VISIBLE_DEVICES": body.cuda_visible_devices,
-            "LLM_BASE_URL": body.llm_base_url or "http://127.0.0.1:0/v1",
-            "LLM_API_KEY": body.llm_api_key or "unused",
-            "LLM_MODEL": body.llm_model or "unused",
+            # slm_only: leave empty; tag/api.sh fills dummies only for argparse.
+            "LLM_BASE_URL": "" if body.router_mode == "slm_only" else (body.llm_base_url or ""),
+            "LLM_API_KEY": "" if body.router_mode == "slm_only" else (body.llm_api_key or ""),
+            "LLM_MODEL": "" if body.router_mode == "slm_only" else (body.llm_model or ""),
             "SLM_API_KEY": body.slm_api_key or "dummy",
             "DEEPSWE_TASKS": body.deepswe_tasks,
             "TB_DATASET": body.tb_dataset,

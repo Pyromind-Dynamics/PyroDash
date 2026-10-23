@@ -205,11 +205,19 @@ runtime = {
         "vllm_extra_args": (os.environ.get("VLLM_EXTRA_ARGS") or "").strip(),
         "sglang_extra_args": (os.environ.get("SGLANG_EXTRA_ARGS") or "").strip(),
     },
-    "llm": {
-        "base_url": (os.environ.get("LLM_BASE_URL") or "").strip(),
-        "model": (os.environ.get("LLM_MODEL") or "").strip(),
-        "api_key": secret_meta("LLM_API_KEY"),
-    },
+    # slm_only never calls LLM; do not persist api.sh argparse placeholders.
+    "llm": (
+        None
+        if (
+            (os.environ.get("ROUTER_MODE") or "") == "slm_only"
+            or (os.environ.get("USE_LLM") or "true").lower() in ("false", "0", "no")
+        )
+        else {
+            "base_url": (os.environ.get("LLM_BASE_URL") or "").strip(),
+            "model": (os.environ.get("LLM_MODEL") or "").strip(),
+            "api_key": secret_meta("LLM_API_KEY"),
+        }
+    ),
     "eval": {
         "mini_extra_args": (os.environ.get("MINI_EXTRA_ARGS") or "").strip(),
         "workers": int(os.environ.get("WORKERS") or 0 or 4),

@@ -412,6 +412,7 @@ class OffloadAdapter:
                     sampling=self._llm_sampling or None,
                     enable_thinking=llm_enable_thinking,
                     reasoning_effort=reasoning_effort,
+                    thinking_kwarg="thinking",
                 )
                 llm_text = llm_content or ""
                 llm_think_text = llm_think or ""
