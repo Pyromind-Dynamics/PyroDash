@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=25" />
+  <link rel="stylesheet" href="styles.css?v=27" />
 </head>
 <body>
   <div class="page">
@@ -307,6 +307,9 @@
           <h1>对比表</h1>
           <div class="history-head-actions">
             <button type="button" class="btn" id="btn-refresh-tables">刷新</button>
+            <button type="button" class="btn danger" id="btn-delete-tables">删除</button>
+            <button type="button" class="btn danger" id="btn-confirm-delete-tables" hidden>确认删除</button>
+            <button type="button" class="btn" id="btn-cancel-delete-tables" hidden>取消</button>
           </div>
         </div>
         <p class="lede tables-lede">按 mode 查看 <code>result.md</code> 历史指标；跑完会自动追加。文件请到「文件」页查看。</p>
@@ -317,10 +320,20 @@
             <button type="button" class="lb-tab" data-mode="terminal">Terminal</button>
             <button type="button" class="lb-tab" data-mode="deepswe">DeepSWE</button>
           </div>
-          <div id="leaderboard-subtabs" class="leaderboard-tabs lb-subtabs" role="tablist">
-            <button type="button" class="lb-tab active" data-section="slm_only">slm_only</button>
-            <button type="button" class="lb-tab" data-section="tag">tag</button>
-            <button type="button" class="lb-tab" data-section="entropy">entropy</button>
+          <div id="leaderboard-filters" class="lb-filters" hidden>
+            <div id="leaderboard-subtabs" class="leaderboard-tabs lb-subtabs" role="tablist" aria-label="router">
+              <span class="lb-filter-label">router</span>
+              <button type="button" class="lb-tab" data-section="all">all</button>
+              <button type="button" class="lb-tab active" data-section="slm_only">slm_only</button>
+              <button type="button" class="lb-tab" data-section="tag">tag</button>
+              <button type="button" class="lb-tab" data-section="entropy">entropy</button>
+            </div>
+            <div id="leaderboard-llm-tabs" class="leaderboard-tabs lb-subtabs" role="tablist" aria-label="LLM">
+              <span class="lb-filter-label">LLM</span>
+              <button type="button" class="lb-tab active" data-llm="all">all</button>
+              <button type="button" class="lb-tab" data-llm="v4">v4</button>
+              <button type="button" class="lb-tab" data-llm="v4.1">v4.1</button>
+            </div>
           </div>
         </div>
         <div id="leaderboard-wrap" class="leaderboard-wrap">
@@ -374,6 +387,6 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=28"></script>
+  <script src="app.js?v=32"></script>
 </body>
 </html>

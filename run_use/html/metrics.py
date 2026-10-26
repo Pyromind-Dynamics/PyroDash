@@ -49,7 +49,65 @@ COLUMNS = [
     "slm_cost",
     "llm_cost",
     "cost_sum",
+    "llm_family",
 ]
+
+# SWE modes that use router subsections + LLM dual filter in the UI.
+SWE_ROUTER_MODES = frozenset({"swe_20filter", "swe"})
+
+
+def normalize_llm_family(model_name: Optional[str]) -> str:
+    """Map a model id string to v4 / v4.1 / '' (unknown)."""
+    s = str(model_name or "").lower().replace("_", "-")
+    if "v4.1" in s or "v4-1" in s:
+        return "v4.1"
+    if "deepseek" in s and "v4" in s:
+        return "v4"
+    return ""
+
+
+def detect_llm_family(run_dir: Path, *, router_mode: Optional[str] = None) -> str:
+    """Detect LLM family for a run dir. Returns v4 / v4.1 / —."""
+    router = str(router_mode or "").strip()
+    if not router:
+        status = _read_json(run_dir / "status.json") or {}
+        if isinstance(status, dict):
+            router = str(status.get("router_mode") or "").strip()
+    if router == "slm_only":
+        return "—"
+
+    cfg = _read_json(run_dir / "logs" / "config.json")
+    if isinstance(cfg, dict):
+        llm = cfg.get("llm")
+        if llm is None:
+            return "—"
+        if isinstance(llm, dict):
+            m = str(llm.get("model") or "").strip()
+            if not m:
+                return "—"
+            fam = normalize_llm_family(m)
+            return fam if fam else "—"
+
+    for rel in ("adapter.log", "logs/adapter.log"):
+        path = run_dir / rel
+        if not path.is_file():
+            continue
+        try:
+            head = path.read_text(errors="ignore")[:8000]
+        except OSError:
+            continue
+        m = re.search(r"LLM=(\S+)", head)
+        if m:
+            val = m.group(1).strip()
+            if val.lower() in ("unused", "none", "null", "-", "—"):
+                return "—"
+            fam = normalize_llm_family(val)
+            return fam if fam else "—"
+        if re.search(r"use_llm\s*=\s*false", head, re.I):
+            return "—"
+
+    fam = normalize_llm_family(run_dir.name)
+    return fam if fam else "—"
 
 
 def _read_json(path: Path) -> Any:
@@ -575,10 +633,18 @@ def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> d
 
     turn_rate = _fmt_pct(offloads / turns) if turns else "0.0%"
 
+    router_mode = str(status.get("router_mode") or "—")
+    llm_family = detect_llm_family(run_dir, router_mode=router_mode)
+    # Pure-LLM baselines named in the row itself.
+    if llm_family == "—":
+        named = normalize_llm_family(name)
+        if named:
+            llm_family = named
+
     row = {
         "model": name,
         "mode": mode,
-        "router_mode": status.get("router_mode") or "—",
+        "router_mode": router_mode,
         "offload_mode": status.get("offload_mode") or "—",
         "phase": status.get("phase") or "—",
         "score": score_str,
@@ -593,6 +659,7 @@ def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> d
         "slm_cost": slm_c,
         "llm_cost": llm_c,
         "cost_sum": cost_sum,
+        "llm_family": llm_family,
         "resolved": resolved,
         "total": total,
         "reward_mean": reward_mean,
@@ -618,6 +685,9 @@ def format_metrics_row(row: dict[str, Any]) -> str:
         _fmt_cost(float(row.get("llm_cost") or 0)),
         _fmt_cost(float(row.get("cost_sum") or 0)),
     ]
+    mode = str(row.get("mode") or "")
+    if mode in SWE_ROUTER_MODES:
+        cells.append(str(row.get("llm_family") or "—"))
     return "| " + " | ".join(cells) + " |"
 
 
@@ -721,7 +791,7 @@ def parse_leaderboard(result_md: Path, mode: str) -> dict[str, Any]:
 
 
 def _subsection_for_row(mode: str, row: dict[str, Any]) -> str | None:
-    if mode != "swe_20filter":
+    if mode not in SWE_ROUTER_MODES:
         return None
     router = str(row.get("router_mode") or "").strip()
     return ROUTER_SUBSECTIONS.get(router)
@@ -897,8 +967,42 @@ def append_or_update_result_md(
     return True
 
 
+def remove_result_md_row(result_md: Path, mode: str, model_name: str) -> bool:
+    """Remove the first table row whose 模型 cell matches model_name. Returns True if removed."""
+    header = MODE_SECTIONS.get(mode)
+    name = str(model_name or "").strip()
+    if not header or not name or not result_md.is_file():
+        return False
+
+    lines = result_md.read_text().splitlines()
+    start = None
+    for i, line in enumerate(lines):
+        if line.strip() == header:
+            start = i
+            break
+    if start is None:
+        return False
+
+    end = _section_end(lines, start)
+    tables = _iter_tables(lines, start + 1, end)
+    for header_idx, last_idx in tables:
+        for i in range(header_idx + 2, last_idx + 1):
+            cells = _split_md_row(lines[i])
+            if cells and cells[0] == name:
+                del lines[i]
+                result_md.write_text("\n".join(lines) + "\n")
+                return True
+    return False
+
+
 def _table_header_line(mode: str) -> str:
     score = "正确率" if mode in SCORE_IS_RATE else "正确数"
+    # Terminal/DeepSWE keep the old column set; SWE modes add LLM family.
+    if mode in SWE_ROUTER_MODES:
+        return (
+            f"| 模型 | {score} | 调用率 | 轮次调用率 | 调用次数 | 总轮次 | "
+            "SLM prompt | SLM output | LLM input | LLM output | slm_cost | llm_cost | cost_sum | LLM |"
+        )
     return (
         f"| 模型 | {score} | 调用率 | 轮次调用率 | 调用次数 | 总轮次 | "
         "SLM prompt | SLM output | LLM input | LLM output | slm_cost | llm_cost | cost_sum |"
@@ -906,6 +1010,11 @@ def _table_header_line(mode: str) -> str:
 
 
 def _table_sep_line(mode: str) -> str:
+    if mode in SWE_ROUTER_MODES:
+        return (
+            "| ---- | ------ | ------ | ---------- | -------- | ------ | "
+            "---------- | ---------- | --------- | ---------- | -------- | -------- | -------- | --- |"
+        )
     return (
         "| ---- | ------ | ------ | ---------- | -------- | ------ | "
         "---------- | ---------- | --------- | ---------- | -------- | -------- | -------- |"

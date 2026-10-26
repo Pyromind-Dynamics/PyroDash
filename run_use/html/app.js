@@ -20,6 +20,9 @@
   let trajFoldMode = "close"; // close | open
   let leaderboardMode = "swe_20filter";
   let leaderboardSection = "slm_only";
+  let leaderboardLlm = "all";
+  let leaderboardSelectMode = false;
+  const SWE_FILTER_MODES = new Set(["swe_20filter", "swe"]);
   const TAB_LS_KEY = "pyrodash_run_use_ui";
   let applyingRoute = false;
 
@@ -311,6 +314,53 @@
 
   $("#btn-refresh")?.addEventListener("click", loadHistory);
   $("#btn-refresh-tables")?.addEventListener("click", () => loadLeaderboard(leaderboardMode));
+  function setLeaderboardSelectMode(on) {
+    leaderboardSelectMode = !!on;
+    const delBtn = $("#btn-delete-tables");
+    const confirmBtn = $("#btn-confirm-delete-tables");
+    const cancelBtn = $("#btn-cancel-delete-tables");
+    if (delBtn) delBtn.hidden = leaderboardSelectMode;
+    if (confirmBtn) confirmBtn.hidden = !leaderboardSelectMode;
+    if (cancelBtn) cancelBtn.hidden = !leaderboardSelectMode;
+    loadLeaderboard(leaderboardMode);
+  }
+  $("#btn-delete-tables")?.addEventListener("click", () => setLeaderboardSelectMode(true));
+  $("#btn-cancel-delete-tables")?.addEventListener("click", () => setLeaderboardSelectMode(false));
+  $("#btn-confirm-delete-tables")?.addEventListener("click", async () => {
+    const models = $$("#leaderboard-tables .lb-check:checked")
+      .map((el) => String(el.value || "").trim())
+      .filter(Boolean);
+    if (!models.length) {
+      alert("请先勾选要删除的行");
+      return;
+    }
+    if (
+      !confirm(
+        `确定从表中删除选中的 ${models.length} 行？\n（只删对比表行，不删 output 目录）`
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await fetch(apiUrl("/api/leaderboard/rows/delete"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: leaderboardMode, models }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "delete failed");
+      leaderboardSelectMode = false;
+      const delBtn = $("#btn-delete-tables");
+      const confirmBtn = $("#btn-confirm-delete-tables");
+      const cancelBtn = $("#btn-cancel-delete-tables");
+      if (delBtn) delBtn.hidden = false;
+      if (confirmBtn) confirmBtn.hidden = true;
+      if (cancelBtn) cancelBtn.hidden = true;
+      await loadLeaderboard();
+    } catch (ex) {
+      alert(String(ex));
+    }
+  });
   $("#btn-sync-result")?.addEventListener("click", async () => {
     if (!previewRunId) {
       alert("先选择左侧一个 run");
@@ -333,14 +383,30 @@
   });
   $$("#leaderboard-subtabs .lb-tab").forEach((btn) => {
     btn.addEventListener("click", () => {
-      leaderboardSection = btn.dataset.section || "slm_only";
+      leaderboardSection = btn.dataset.section || "all";
+      loadLeaderboard(leaderboardMode);
+    });
+  });
+  $$("#leaderboard-llm-tabs .lb-tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      leaderboardLlm = btn.dataset.llm || "all";
       loadLeaderboard(leaderboardMode);
     });
   });
   $("#leaderboard-tables")?.addEventListener("click", (ev) => {
+    if (ev.target.closest(".lb-check")) return;
     const btn = ev.target.closest(".lb-model");
     if (!btn) return;
     openRunFromLeaderboard(btn.dataset.runId);
+  });
+  $("#leaderboard-tables")?.addEventListener("change", (ev) => {
+    const t = ev.target;
+    if (!(t instanceof HTMLInputElement)) return;
+    if (t.classList.contains("lb-check-all")) {
+      $$("#leaderboard-tables .lb-check").forEach((el) => {
+        el.checked = t.checked;
+      });
+    }
   });
   $("#btn-view-results")?.addEventListener("click", () => {
     switchTab("files");
@@ -593,21 +659,29 @@
   }
 
   function leaderboardTableHtml(cols, rows, runIds) {
+    const select = leaderboardSelectMode;
     const body = rows
       .map((r) => {
         const modelName = r["模型"] ?? r.model ?? "";
         const highlight =
           previewRunId && modelName === previewRunId ? " class=\"lb-hl\"" : "";
-        return `<tr${highlight}>${cols
+        const check = select
+          ? `<td class="lb-check-cell"><input type="checkbox" class="lb-check" value="${escapeHtml(modelName)}" /></td>`
+          : "";
+        const cells = cols
           .map((c) => {
             const val = r[c] ?? "";
             if (c === "模型") return modelCell(val, runIds);
             return `<td>${escapeHtml(val)}</td>`;
           })
-          .join("")}</tr>`;
+          .join("");
+        return `<tr${highlight}>${check}${cells}</tr>`;
       })
       .join("");
-    return `<table class="leaderboard-table"><thead><tr>${cols
+    const checkHead = select
+      ? `<th class="lb-check-cell"><input type="checkbox" class="lb-check-all" title="全选" /></th>`
+      : "";
+    return `<table class="leaderboard-table"><thead><tr>${checkHead}${cols
       .map((c) => `<th>${escapeHtml(c)}</th>`)
       .join("")}</tr></thead><tbody>${body}</tbody></table>`;
   }
@@ -620,16 +694,36 @@
     return "";
   }
 
+  function rowLlmFamily(row) {
+    const raw = row?.LLM ?? row?.llm_family ?? row?.llm ?? "";
+    const s = String(raw || "").trim();
+    if (s === "v4.1") return "v4.1";
+    if (s === "v4") return "v4";
+    return "—";
+  }
+
+  function filterRowsByLlm(rows) {
+    if (leaderboardLlm === "all") return rows || [];
+    return (rows || []).filter((r) => rowLlmFamily(r) === leaderboardLlm);
+  }
+
   async function loadLeaderboard(mode) {
     if (mode) leaderboardMode = mode;
     $$("#leaderboard-tabs .lb-tab").forEach((b) => {
       b.classList.toggle("active", b.dataset.mode === leaderboardMode);
     });
-    const sub = $("#leaderboard-subtabs");
-    const is20 = leaderboardMode === "swe_20filter";
-    if (sub) sub.hidden = !is20;
+    const filters = $("#leaderboard-filters");
+    const llmTabs = $("#leaderboard-llm-tabs");
+    const showFilters = SWE_FILTER_MODES.has(leaderboardMode);
+    if (filters) filters.hidden = !showFilters;
+    // slm_only 不用 LLM，隐藏 LLM 过滤（该维视为 all）
+    const hideLlm = showFilters && leaderboardSection === "slm_only";
+    if (llmTabs) llmTabs.hidden = hideLlm;
     $$("#leaderboard-subtabs .lb-tab").forEach((b) => {
       b.classList.toggle("active", b.dataset.section === leaderboardSection);
+    });
+    $$("#leaderboard-llm-tabs .lb-tab").forEach((b) => {
+      b.classList.toggle("active", b.dataset.llm === leaderboardLlm);
     });
     const host = $("#leaderboard-tables");
     const empty = $("#leaderboard-empty");
@@ -650,21 +744,37 @@
         data.sections && data.sections.length
           ? data.sections
           : [{ title: "", rows: data.rows || [] }];
-      if (is20) {
-        const picked = sections.filter((s) => sectionKey(s.title) === leaderboardSection);
-        sections = picked.length ? picked : sections.slice(0, 1);
+      if (showFilters) {
+        if (leaderboardSection !== "all") {
+          const picked = sections.filter(
+            (s) => sectionKey(s.title) === leaderboardSection
+          );
+          sections = picked.length ? picked : [];
+        }
+        const applyLlm = leaderboardSection !== "slm_only";
+        sections = sections
+          .map((sec) => ({
+            ...sec,
+            rows: applyLlm ? filterRowsByLlm(sec.rows || []) : sec.rows || [],
+          }))
+          .filter((sec) => (sec.rows || []).length > 0);
       }
       const totalRows = sections.reduce((n, s) => n + ((s.rows || []).length), 0);
       if (!cols.length || !totalRows) {
         host.innerHTML = "";
         if (empty) {
           empty.hidden = false;
-          empty.textContent = data.error || "该 mode 暂无行";
+          empty.textContent = data.error || "该筛选下暂无行";
         }
         return;
       }
       host.innerHTML = sections
-        .map((sec) => leaderboardTableHtml(cols, sec.rows || [], runIds))
+        .map((sec) => {
+          const title = sec.title
+            ? `<div class="lb-section-title">${escapeHtml(sec.title)}</div>`
+            : "";
+          return `${title}${leaderboardTableHtml(cols, sec.rows || [], runIds)}`;
+        })
         .join("");
     } catch (ex) {
       host.innerHTML = `<p class="error" style="margin:0.6rem 0.75rem">${escapeHtml(String(ex))}</p>`;

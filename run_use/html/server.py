@@ -34,6 +34,7 @@ from metrics import (  # noqa: E402
     parse_leaderboard,
     persist_run_to_result_md,
     planned_count_from_mini_extra_args,
+    remove_result_md_row,
 )
 
 app = FastAPI(title="PyroDash run_use", version="0.2.0")
@@ -1166,6 +1167,62 @@ def api_leaderboard(mode: str = "swe_20filter") -> dict[str, Any]:
     data = parse_leaderboard(RESULT_MD, mode)
     data["result_md"] = str(RESULT_MD)
     return data
+
+
+class DeleteLeaderboardRowsRequest(BaseModel):
+    mode: str = Field(default="swe_20filter")
+    models: list[str] = Field(default_factory=list)
+
+
+@app.post("/api/leaderboard/row/delete")
+def delete_leaderboard_row(
+    mode: str = "swe_20filter",
+    model: str = "",
+) -> dict[str, Any]:
+    """Remove one row from result.md by 模型 name. Does not delete output/."""
+    if mode not in SUPPORTED_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"mode must be one of {', '.join(SUPPORTED_MODES)}",
+        )
+    model_name = (model or "").strip()
+    if not model_name:
+        raise HTTPException(status_code=400, detail="model is required")
+    ok = remove_result_md_row(RESULT_MD, mode, model_name)
+    if not ok:
+        raise HTTPException(status_code=404, detail="row not found")
+    return {"ok": True, "mode": mode, "model": model_name}
+
+
+@app.post("/api/leaderboard/rows/delete")
+def delete_leaderboard_rows(body: DeleteLeaderboardRowsRequest) -> dict[str, Any]:
+    """Remove multiple rows from result.md. Does not delete output/."""
+    mode = (body.mode or "").strip() or "swe_20filter"
+    if mode not in SUPPORTED_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"mode must be one of {', '.join(SUPPORTED_MODES)}",
+        )
+    names = []
+    seen: set[str] = set()
+    for raw in body.models or []:
+        name = str(raw or "").strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    if not names:
+        raise HTTPException(status_code=400, detail="models is required")
+    deleted: list[str] = []
+    missing: list[str] = []
+    for name in names:
+        if remove_result_md_row(RESULT_MD, mode, name):
+            deleted.append(name)
+        else:
+            missing.append(name)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="rows not found")
+    return {"ok": True, "mode": mode, "deleted": deleted, "missing": missing}
 
 
 @app.post("/api/runs/{run_id}/sync_result")

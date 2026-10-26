@@ -483,13 +483,38 @@ input:focus, select:focus {
   flex-shrink: 0;
 }
 
+.lb-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1.1rem;
+  width: 100%;
+}
+
+.lb-filters[hidden] {
+  display: none;
+}
+
 .lb-subtabs {
   padding: 0;
   border: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
 }
 
 .lb-subtabs[hidden] {
   display: none;
+}
+
+.lb-filter-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  margin-right: 0.1rem;
+  user-select: none;
 }
 
 .leaderboard-tabs {
@@ -582,6 +607,22 @@ input:focus, select:focus {
 
 .lb-model:hover {
   color: #b6e8d4;
+}
+
+.leaderboard-table th.lb-check-cell,
+.leaderboard-table td.lb-check-cell {
+  width: 2rem;
+  text-align: center;
+  padding: 0.25rem 0.35rem;
+  vertical-align: middle;
+}
+
+.leaderboard-table .lb-check,
+.leaderboard-table .lb-check-all {
+  width: 0.95rem;
+  height: 0.95rem;
+  cursor: pointer;
+  accent-color: #c45c5c;
 }
 
 .lb-section-title {
