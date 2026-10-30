@@ -62,9 +62,12 @@ MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-8192}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-}"
 
 # offload mode: handoff | rewrite | keep
-OFFLOAD_MODE="${OFFLOAD_MODE:-handoff}"
+OFFLOAD_MODE="${OFFLOAD_MODE:-rewrite}"
 # USE_LLM=false → SLM-only (no offload system prompt, no LLM call)
 USE_LLM="${USE_LLM:-true}"
+# Whether <|/llm_offload|> is passed as SLM stop. Empty = derive from USE_LLM
+# (true when USE_LLM=true, false when USE_LLM=false / slm_only).
+STOP_ON_OFFLOAD_CLOSE="${STOP_ON_OFFLOAD_CLOSE:-}"
 # =========================
 
 case "${SLM_BACKEND}" in
@@ -114,6 +117,18 @@ else
   LLM_MODEL="${LLM_MODEL:-unused}"
   echo "[api] USE_LLM=false → SLM-only (no offload system prompt)"
 fi
+if [[ -z "${STOP_ON_OFFLOAD_CLOSE}" ]]; then
+  if [[ "${USE_LLM}" == "true" ]]; then
+    STOP_ON_OFFLOAD_CLOSE=true
+  else
+    STOP_ON_OFFLOAD_CLOSE=false
+  fi
+fi
+case "${STOP_ON_OFFLOAD_CLOSE}" in
+  true|True|TRUE|1|yes|YES) STOP_ON_OFFLOAD_CLOSE=true ;;
+  false|False|FALSE|0|no|NO) STOP_ON_OFFLOAD_CLOSE=false ;;
+  *) echo "ERROR: STOP_ON_OFFLOAD_CLOSE must be true or false (got ${STOP_ON_OFFLOAD_CLOSE})" >&2; exit 1 ;;
+esac
 case "${OFFLOAD_MODE}" in
   handoff|rewrite|keep) ;;
   *) echo "ERROR: OFFLOAD_MODE must be handoff, rewrite, or keep (got ${OFFLOAD_MODE})" >&2; exit 1 ;;
@@ -182,6 +197,7 @@ start_adapter() {
   fi
   echo "[adapter] SLM=${SLM_MODEL} @ ${SLM_BASE_URL}"
   echo "[adapter] LLM=${LLM_MODEL} @ ${LLM_BASE_URL}  use_llm=${USE_LLM}"
+  echo "[adapter] stop_on_offload_close=${STOP_ON_OFFLOAD_CLOSE}"
   echo "[adapter] offload mode=${OFFLOAD_MODE}"
   echo "[adapter] listen ${ADAPTER_HOST}:${ADAPTER_PORT}  log=${ADAPTER_LOG}"
   echo "[adapter] stats -> ${LOG_DIR}/adapter_stats"
@@ -196,6 +212,7 @@ start_adapter() {
     --llm-api-key "${LLM_API_KEY}" \
     --llm-model "${LLM_MODEL}" \
     --use-llm "${USE_LLM}" \
+    --stop-on-offload-close "${STOP_ON_OFFLOAD_CLOSE}" \
     --max-new-tokens "${MAX_NEW_TOKENS}" \
     ${MAX_MODEL_LEN:+--max-context-len "${MAX_MODEL_LEN}"} \
     --slm-temperature "${SLM_TEMPERATURE}" \

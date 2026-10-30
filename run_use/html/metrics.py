@@ -117,6 +117,359 @@ def _read_json(path: Path) -> Any:
         return None
 
 
+# Weight roots used to recover paths for old leaderboard rows without config.json.
+MODELS_ROOT = Path("/workspace/work/mjy/models")
+SLIME_RUNS_ROOT = Path("/workspace/work/spt/slime/runs")
+SLIME_A_SFT_ROOT = SLIME_RUNS_ROOT / "a_sft"
+
+_slime_date_index: Optional[dict[str, list[Path]]] = None
+
+
+def _looks_like_weight_dir(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    if (path / "config.json").is_file():
+        return True
+    if (path / "adapter_config.json").is_file():
+        return True
+    name = path.name
+    if name.startswith("iter_") or name.startswith("checkpoint-"):
+        return True
+    if "checkpoint" in name.lower():
+        return True
+    return False
+
+
+def _pick_preferred_weight(paths: list[Path]) -> Optional[Path]:
+    """Prefer HF export dirs over torch_dist / bare megatron iters."""
+    if not paths:
+        return None
+    scored: list[tuple[int, str, Path]] = []
+    for p in paths:
+        name = p.name
+        if "torch_dist" in name:
+            score = 10
+        elif name.endswith("_hf") or (p / "config.json").is_file():
+            score = 100
+        elif (p / "adapter_config.json").is_file():
+            score = 80
+        elif name.startswith("iter_") or name.startswith("checkpoint-"):
+            score = 40
+        else:
+            score = 20
+        scored.append((score, str(p), p))
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    return scored[0][2]
+
+
+def _slime_runs_by_date() -> dict[str, list[Path]]:
+    """Map ``MMDD_HHMMSS`` / ``YYYYMMDD_HHMMSS`` → slime run dirs ending with that stamp."""
+    global _slime_date_index
+    if _slime_date_index is not None:
+        return _slime_date_index
+    index: dict[str, list[Path]] = {}
+    root = SLIME_RUNS_ROOT
+    if root.is_dir():
+        stamp_re = re.compile(r"(20\d{6}_\d{6})$")
+        try:
+            for child in root.iterdir():
+                if not child.is_dir() or child.name.startswith("a_"):
+                    continue
+                m = stamp_re.search(child.name)
+                if not m:
+                    continue
+                full = m.group(1)
+                mmdd = full[4:]
+                index.setdefault(full, []).append(child)
+                index.setdefault(mmdd, []).append(child)
+        except OSError:
+            pass
+    _slime_date_index = index
+    return index
+
+
+def _candidate_names(name: str) -> list[str]:
+    """Generate lookup aliases for a leaderboard / run id."""
+    raw = str(name or "").strip()
+    if not raw:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(x: str) -> None:
+        s = str(x or "").strip()
+        if not s or s in seen:
+            return
+        seen.add(s)
+        out.append(s)
+
+    add(raw)
+    # Terminal-bench style: ``0813_130742/iter_0000079(dp)_0816``
+    cleaned = re.sub(r"\(dp\).*$", "", raw).rstrip("_")
+    add(cleaned)
+    for base in list(out):
+        if base.endswith("_slmonly"):
+            add(base[: -len("_slmonly")])
+        # trailing eval suffix ``_1`` / ``_2``
+        m = re.fullmatch(r"(.+)_(\d{1,2})", base)
+        if m and not m.group(1).endswith("iter"):
+            add(m.group(1))
+        # ``checkpoint-110-sh_20260922_103116`` → ``checkpoint-110-sh``
+        m = re.fullmatch(r"(.+)_(20\d{6}_\d{6})", base)
+        if m:
+            add(m.group(1))
+        # entropy eval tags after the weight id
+        for marker in ("_first_sentence", "_full_turn"):
+            if marker in base:
+                add(base.split(marker, 1)[0])
+        # ``ck70_lora_1025`` → prefer ckpt70 token helper via fuzzy; also try expanded
+        m = re.fullmatch(r"ck(\d+)_.+", base)
+        if m:
+            add(f"ckpt{m.group(1)}")
+    return out
+
+
+def _exact_under(root: Path, name: str) -> Optional[Path]:
+    if not root.is_dir() or not name:
+        return None
+    direct = root / name
+    if _looks_like_weight_dir(direct) or (direct.is_dir() and any(direct.iterdir())):
+        # Prefer nested HF child when the top dir is a run bag of iters.
+        if direct.is_dir() and not (direct / "config.json").is_file():
+            kids = [
+                c
+                for c in direct.iterdir()
+                if c.is_dir()
+                and (
+                    c.name.startswith("iter_")
+                    or c.name.startswith("checkpoint-")
+                    or (c / "config.json").is_file()
+                )
+            ]
+            # Only auto-descend when a single clear HF child exists; otherwise return the dir itself.
+            hf_kids = [c for c in kids if c.name.endswith("_hf") or (c / "config.json").is_file()]
+            if len(hf_kids) == 1 and not (direct / "adapter_config.json").is_file():
+                return hf_kids[0]
+        return direct
+    return None
+
+
+def _resolve_date_iter(name: str) -> Optional[Path]:
+    """``MMDD_HHMMSS/iter_XXXX`` or ``YYYYMMDD_HHMMSS_iter_XXXX[_hf]`` → slime checkpoint."""
+    date = ""
+    it = ""
+    m = re.fullmatch(r"(\d{4}_\d{6})/(iter_\d+)(_hf)?", name)
+    if m:
+        date, it = m.group(1), m.group(2)
+    else:
+        m = re.fullmatch(r"(20\d{6}_\d{6})[_/](iter_\d+)(_hf)?", name)
+        if m:
+            date, it = m.group(1), m.group(2)
+        else:
+            m = re.fullmatch(r"(20\d{6}_\d{6})_(iter_\d+_hf)", name)
+            if m:
+                date, it = m.group(1), m.group(2).replace("_hf", "")
+    if not date or not it:
+        return None
+
+    runs = _slime_runs_by_date().get(date) or []
+    if not runs and len(date) == 11:  # MMDD_HHMMSS
+        # try with 2026 / 2025 prefix already indexed via mmdd key
+        runs = _slime_runs_by_date().get(date) or []
+    found: list[Path] = []
+    full_dates = [date] if date.startswith("20") else [f"2026{date}", f"2025{date}"]
+    for run in runs:
+        ck = run / "checkpoints"
+        if not ck.is_dir():
+            continue
+        candidates = [
+            ck / f"{it}_hf",
+            ck / it,
+        ]
+        for fd in full_dates:
+            candidates.append(ck / f"{fd}_{it}_hf")
+            candidates.append(ck / f"{fd}_{it}")
+        try:
+            for child in ck.iterdir():
+                if not child.is_dir():
+                    continue
+                if it in child.name and (
+                    child.name.startswith(it)
+                    or any(fd in child.name for fd in full_dates)
+                ):
+                    candidates.append(child)
+        except OSError:
+            pass
+        for c in candidates:
+            if c.is_dir():
+                found.append(c)
+    return _pick_preferred_weight(found)
+
+
+def _fuzzy_models_match(name: str) -> Optional[Path]:
+    """Best-effort match under mjy/models for shortened eval names."""
+    if not MODELS_ROOT.is_dir() or not name:
+        return None
+    # skip pure LLM baselines / remote-looking / generic qwen eval tags
+    lower = name.lower()
+    if lower.startswith(("deepseek", "glm", "qwen3.6", "qwen3.5", "qwen3-")):
+        return None
+    # bare ckpt token from ``ck70_…`` alias
+    if re.fullmatch(r"ckpt\d+", name):
+        try:
+            hits = [
+                p
+                for p in MODELS_ROOT.iterdir()
+                if p.is_dir() and name in p.name
+            ]
+        except OSError:
+            hits = []
+        return _pick_preferred_weight(hits)
+
+    try:
+        entries = [p for p in MODELS_ROOT.iterdir() if p.is_dir()]
+    except OSError:
+        return None
+
+    for p in entries:
+        if p.name == name:
+            return p
+
+    # Token overlap for names like offload_sft0918_lora_50k_ckpt70
+    raw_tokens = [t for t in re.split(r"[_\-/]+", name) if t]
+    skip = {"lora", "code", "n", "1", "2", "offload", "sft", "marker", "asst", "last"}
+    tokens: list[str] = []
+    for t in raw_tokens:
+        if t in skip:
+            continue
+        # keep23 ↔ keep2of3
+        if t.startswith("keep") and t[4:].isdigit():
+            tokens.append(t)
+            tokens.append(f"keep{t[4]}of")
+            continue
+        tokens.append(t)
+    # Need a distinctive anchor (ckptXX / checkpoint-XX / dated run id)
+    anchors = [
+        t
+        for t in tokens
+        if t.startswith("ckpt")
+        or t.startswith("checkpoint")
+        or re.fullmatch(r"20\d{6}", t)
+        or re.fullmatch(r"sft\d{4}", t)
+    ]
+    if not anchors and len(tokens) < 3:
+        return None
+
+    best: Optional[Path] = None
+    best_score = 0
+    for p in entries:
+        score = 0
+        for t in tokens:
+            if t in p.name:
+                score += 2 if t in anchors or t.startswith(("ckpt", "checkpoint", "keep")) else 1
+        need = 4 if anchors else max(4, len(tokens))
+        if score >= need and score > best_score:
+            best_score = score
+            best = p
+    return best
+
+
+def lookup_model_path_by_name(name: str) -> str:
+    """Map a leaderboard/run short name to an absolute weight path on disk."""
+    for cand in _candidate_names(name):
+        # 1) exact under models / a_sft / slime runs root
+        for root in (MODELS_ROOT, SLIME_A_SFT_ROOT, SLIME_RUNS_ROOT):
+            hit = _exact_under(root, cand)
+            if hit is not None:
+                return str(hit.resolve())
+
+        # 2) date/iter slime checkpoint pattern
+        hit = _resolve_date_iter(cand)
+        if hit is not None:
+            return str(hit.resolve())
+
+        # 3) fuzzy under models
+        hit = _fuzzy_models_match(cand)
+        if hit is not None:
+            return str(hit.resolve())
+    return ""
+
+
+def resolve_slm_model_path(run_dir: Path, *, model_name: Optional[str] = None) -> str:
+    """Local abs path, or remote ``base_url::model``. Empty if unknown.
+
+    Order: status/config stamp → disk lookup by run id / model_name under
+    ``/workspace/work/mjy/models`` and ``/workspace/work/spt/slime/runs``.
+    """
+    run_dir = Path(run_dir)
+    status = _read_json(run_dir / "status.json")
+    if isinstance(status, dict):
+        stamped = str(status.get("model_path") or "").strip()
+        if stamped:
+            return stamped
+
+    cfg = _read_json(run_dir / "logs" / "config.json")
+    if isinstance(cfg, dict):
+        slm = cfg.get("slm")
+        if isinstance(slm, dict):
+            local = str(slm.get("model_path") or "").strip()
+            if local:
+                return local
+            base = str(slm.get("base_url") or "").strip()
+            model = str(slm.get("model") or "").strip()
+            if base and model:
+                return f"{base}::{model}"
+            if base:
+                return base
+            if model:
+                return model
+
+    for key in (model_name, run_dir.name if run_dir.name else None):
+        if not key:
+            continue
+        found = lookup_model_path_by_name(str(key))
+        if found:
+            return found
+    return ""
+
+
+def enrich_leaderboard_model_paths(
+    data: dict[str, Any],
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Attach ``model_path`` onto each parsed leaderboard row (does not edit md)."""
+    output_dir = Path(output_dir)
+    cache: dict[str, str] = {}
+
+    def path_for(name: str) -> str:
+        key = str(name or "").strip()
+        if not key:
+            return ""
+        if key in cache:
+            return cache[key]
+        run_dir = output_dir / key
+        val = ""
+        if run_dir.is_dir():
+            val = resolve_slm_model_path(run_dir, model_name=key)
+        if not val:
+            val = lookup_model_path_by_name(key)
+        cache[key] = val
+        return val
+
+    for row in data.get("rows") or []:
+        if isinstance(row, dict):
+            name = str(row.get("模型") or row.get("model") or "").strip()
+            row["model_path"] = path_for(name)
+    for sec in data.get("sections") or []:
+        if not isinstance(sec, dict):
+            continue
+        for row in sec.get("rows") or []:
+            if isinstance(row, dict):
+                name = str(row.get("模型") or row.get("model") or "").strip()
+                row["model_path"] = path_for(name)
+    return data
+
+
 def _fmt_int(n: int) -> str:
     return f"{int(n):,}"
 
@@ -156,13 +509,53 @@ def find_adapter_stats_dir(run_dir: Path) -> Optional[Path]:
     # nested under logs/*
     log_dir = run_dir / "logs"
     if log_dir.is_dir():
-        for p in sorted(log_dir.rglob("summary.json")):
-            parent = p.parent
-            if parent.name == "adapter_stats" or (parent / "sessions").is_dir():
-                return parent
-            if p.name == "summary.json" and "adapter" in str(parent):
-                return parent
+        names = ("summary_session.json", "summary_task.json", "summary.json")
+        for name in names:
+            for p in sorted(log_dir.rglob(name)):
+                parent = p.parent
+                # Prefer adapter_stats/ even when file lives in token_usage/
+                if parent.name == "token_usage" and parent.parent.name == "adapter_stats":
+                    return parent.parent
+                if parent.name == "adapter_stats" or (parent / "sessions").is_dir():
+                    return parent
+                if "adapter" in str(parent):
+                    return parent if parent.name != "token_usage" else parent.parent
     return None
+
+
+def resolve_adapter_stat_files(stats_dir: Path) -> dict[str, Optional[Path]]:
+    """Resolve canonical token_usage files, with legacy fallbacks for old runs."""
+    stats_dir = Path(stats_dir)
+    tu = stats_dir / "token_usage"
+
+    def first_existing(*paths: Path) -> Optional[Path]:
+        for path in paths:
+            if path.is_file():
+                return path
+        return None
+
+    return {
+        "token_usage_dir": tu if tu.is_dir() else None,
+        "summary_session": first_existing(
+            tu / "summary_session.json",
+            stats_dir / "summary.json",
+        ),
+        "summary_task": first_existing(
+            tu / "summary_task.json",
+            tu / "summary.json",
+        ),
+        "turns": first_existing(
+            tu / "turns.jsonl",
+            stats_dir / "turns.jsonl",
+        ),
+        "turn_trace": first_existing(
+            tu / "turn_trace.jsonl",
+            stats_dir / "turn_trace.jsonl",
+        ),
+        "sessions_dir": (stats_dir / "sessions")
+        if (stats_dir / "sessions").is_dir()
+        else None,
+    }
 
 
 def _load_adapter_totals(stats_dir: Path) -> dict[str, Any]:
@@ -177,8 +570,9 @@ def _load_adapter_totals(stats_dir: Path) -> dict[str, Any]:
         "llm_input": 0,
         "llm_output": 0,
     }
-    summary_path = stats_dir / "summary.json"
-    data = _read_json(summary_path) if summary_path.is_file() else None
+    files = resolve_adapter_stat_files(stats_dir)
+
+    data = _read_json(files["summary_session"]) if files["summary_session"] else None
     sessions: list[dict[str, Any]] = []
     if isinstance(data, dict):
         totals = data.get("totals") or {}
@@ -194,16 +588,14 @@ def _load_adapter_totals(stats_dir: Path) -> dict[str, Any]:
         if isinstance(raw_sessions, list):
             sessions = [s for s in raw_sessions if isinstance(s, dict)]
 
-    sess_dir = stats_dir / "sessions"
-    if not sessions and sess_dir.is_dir():
+    sess_dir = files["sessions_dir"]
+    if not sessions and sess_dir is not None:
         for p in sorted(sess_dir.glob("*.json")):
             s = _read_json(p)
             if isinstance(s, dict):
                 sessions.append(s)
 
-    # token_usage/summary.json alternate shape
-    tu = stats_dir / "token_usage" / "summary.json"
-    tu_data = _read_json(tu) if tu.is_file() else None
+    tu_data = _read_json(files["summary_task"]) if files["summary_task"] else None
     if isinstance(tu_data, dict):
         totals = tu_data.get("totals") or {}
         if isinstance(totals, dict):
@@ -555,6 +947,7 @@ def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> d
 
     eval_dir = find_eval_dir(run_dir, mode)
     stats_dir = find_adapter_stats_dir(run_dir)
+    stats_files = resolve_adapter_stat_files(stats_dir) if stats_dir else {}
     adapter = _load_adapter_totals(stats_dir) if stats_dir else {
         "sessions": 0,
         "sessions_with_offload": 0,
@@ -664,6 +1057,11 @@ def compute_run_metrics(run_dir: Path, *, model_name: Optional[str] = None) -> d
         "total": total,
         "reward_mean": reward_mean,
         "stats_dir": str(stats_dir) if stats_dir else None,
+        "stats_files": {
+            key: (str(path) if path is not None else None)
+            for key, path in stats_files.items()
+        },
+        "model_path": resolve_slm_model_path(run_dir),
     }
     return row
 

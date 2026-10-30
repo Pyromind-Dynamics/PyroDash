@@ -39,7 +39,7 @@ LLM_MODEL="${LLM_MODEL:-your-llm-model}"
 
 # tag | entropy | slm_only (slm_only → tag adapter + USE_LLM=false)
 ROUTER_MODE="${ROUTER_MODE:-tag}"
-OFFLOAD_MODE="${OFFLOAD_MODE:-handoff}"
+OFFLOAD_MODE="${OFFLOAD_MODE:-rewrite}"
 USE_LLM="${USE_LLM:-true}"
 
 SLM_BACKEND="${SLM_BACKEND:-vllm}"
@@ -122,6 +122,21 @@ else
   USE_LLM=true
 fi
 
+# Whether <|/llm_offload|> is an SLM stop string. slm_only defaults false; tag/entropy true.
+if [[ -z "${STOP_ON_OFFLOAD_CLOSE:-}" ]]; then
+  if [[ "${ROUTER_MODE}" == "slm_only" ]]; then
+    STOP_ON_OFFLOAD_CLOSE=false
+  else
+    STOP_ON_OFFLOAD_CLOSE=true
+  fi
+fi
+case "${STOP_ON_OFFLOAD_CLOSE}" in
+  true|True|TRUE|1|yes|YES) STOP_ON_OFFLOAD_CLOSE=true ;;
+  false|False|FALSE|0|no|NO) STOP_ON_OFFLOAD_CLOSE=false ;;
+  *) echo "[run ERROR] STOP_ON_OFFLOAD_CLOSE must be true or false (got ${STOP_ON_OFFLOAD_CLOSE})" >&2; exit 1 ;;
+esac
+echo "[run] STOP_ON_OFFLOAD_CLOSE=${STOP_ON_OFFLOAD_CLOSE}"
+
 API_SH="${PYRODASH_ROOT}/offload/offload_code/${ADAPTER_KIND}/api.sh"
 [[ -f "${API_SH}" ]] || { echo "[run ERROR] missing ${API_SH}" >&2; exit 1; }
 
@@ -191,6 +206,7 @@ runtime = {
     "router_mode": os.environ.get("ROUTER_MODE", ""),
     "offload_mode": "—" if os.environ.get("ROUTER_MODE") == "slm_only" else os.environ.get("OFFLOAD_MODE", ""),
     "use_llm": (os.environ.get("USE_LLM", "true").lower() == "true"),
+    "stop_on_offload_close": (os.environ.get("STOP_ON_OFFLOAD_CLOSE", "true").lower() in ("1", "true", "yes", "on")),
     "mode": os.environ.get("MODE", ""),
     "cluster": os.environ.get("CLUSTER", ""),
     "slm": {
@@ -254,7 +270,7 @@ write_status() {
   local message="${2:-}"
   local extra="${3:-}"
   "${PYTHON_BIN}" - "${STATUS_FILE}" "${phase}" "${message}" "${RUN_ID}" "${ROUTER_MODE}" "${MODE}" "${OFFLOAD_MODE}" "${CLUSTER}" "${extra}" <<'PY'
-import json, sys, time
+import json, os, sys, time
 from pathlib import Path
 path, phase, message, run_id, router, mode, offload_mode, cluster, extra = sys.argv[1:10]
 prev = {}
@@ -277,6 +293,23 @@ data = {
     "message": message,
     "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
 }
+stop_raw = (os.environ.get("STOP_ON_OFFLOAD_CLOSE") or "").strip().lower()
+if stop_raw in ("1", "true", "yes", "on"):
+    data["stop_on_offload_close"] = True
+elif stop_raw in ("0", "false", "no", "off"):
+    data["stop_on_offload_close"] = False
+model_path = (os.environ.get("MODEL_PATH") or "").strip()
+if not model_path:
+    base = (os.environ.get("SLM_BASE_URL") or "").strip()
+    model = (os.environ.get("SLM_MODEL") or "").strip()
+    if base and model:
+        model_path = f"{base}::{model}"
+    elif base:
+        model_path = base
+    elif model:
+        model_path = model
+if model_path:
+    data["model_path"] = model_path
 if phase == "starting_adapter" and "started_at" not in data:
     data["started_at"] = data["updated_at"]
 if phase in ("starting_adapter", "evaluating"):
@@ -333,13 +366,14 @@ export MODEL_PATH SLM_BASE_URL SLM_API_KEY SLM_MODEL
 export LLM_BASE_URL LLM_API_KEY LLM_MODEL
 export CUDA_VISIBLE_DEVICES
 export SLM_BACKEND SLM_PORT VLLM_PORT MAX_MODEL_LEN
-export ADAPTER_HOST ADAPTER_PORT OFFLOAD_MODE USE_LLM PYTHON_BIN
+export ADAPTER_HOST ADAPTER_PORT OFFLOAD_MODE USE_LLM STOP_ON_OFFLOAD_CLOSE PYTHON_BIN
 export WORKERS HARNESS_WORKERS STEP_LIMIT
 export VLLM_ENV VLLM_BIN VLLM_CONDA_PREFIX VIRTUAL_ENV PATH
 # HARNESS_PYTHON may be empty for deepswe/terminal
 export HARNESS_PYTHON="${HARNESS_PYTHON:-}"
 export OFFLOAD_LOG_DIR="${LOG_DIR}"
-export TOKEN_USAGE_DIR="${LOG_DIR}/adapter_stats"
+# Canonical stats live under adapter_stats/token_usage/ (turns, traces, summaries).
+export TOKEN_USAGE_DIR="${LOG_DIR}/adapter_stats/token_usage"
 export MODE CLUSTER RUN_ID ROUTER_MODE RESUME
 export N_CONCURRENT N_TASKS DEEPSWE_TASKS TB_DATASET
 export INSTANCE_FILTER="${INSTANCE_FILTER:-}"

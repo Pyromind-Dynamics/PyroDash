@@ -143,11 +143,11 @@
       "需配置 LLM；不使用 OFFLOAD_MODE。",
     slm_only:
       "<strong>slm_only</strong>：仅跑小模型，不调用大模型、不注入 offload 协议。" +
-      "仍走 adapter（可改 ADAPTER_PORT）。LLM / OFFLOAD_MODE 不显示。",
+      "仍走 adapter（可改 ADAPTER_PORT）。可另选是否把 &lt;|/llm_offload|&gt; 当作 SLM 停止符（默认否）。",
   };
   const OFFLOAD_HELP = {
     handoff:
-      "<strong>handoff</strong>（常用）：保留小模型已生成内容，用 &lt;part_think&gt; 交给大模型从断点续写。",
+      "<strong>handoff</strong>：保留小模型已生成内容，用 &lt;part_think&gt; 交给大模型从断点续写。",
     rewrite:
       "<strong>rewrite</strong>：丢弃小模型本轮输出，由大模型按原问题整段重新生成。",
     keep:
@@ -158,7 +158,7 @@
     const help = $("#router-help");
     if (!help) return;
     const router = $("#router-select")?.value || "tag";
-    const mode = $("#offload-mode-select")?.value || "handoff";
+    const mode = $("#offload-mode-select")?.value || "rewrite";
     const parts = [ROUTER_HELP[router] || ""];
     if (router === "tag") parts.push(OFFLOAD_HELP[mode] || "");
     help.innerHTML = parts.filter(Boolean).join("<br>");
@@ -192,6 +192,19 @@
     if (offloadSelect) {
       offloadSelect.disabled = slmOnly || !isTag;
     }
+
+    const stopLabel = $("#stop-on-offload-label");
+    const stopCheck = $("#stop-on-offload-close");
+    if (stopLabel) {
+      stopLabel.hidden = !slmOnly;
+      stopLabel.style.setProperty("display", slmOnly ? "" : "none", "important");
+    }
+    if (stopCheck) {
+      stopCheck.disabled = !slmOnly;
+      // Entering slm_only: default unchecked (do not stop on offload close).
+      if (!slmOnly) stopCheck.checked = false;
+    }
+
     ["llm-base-url", "llm-model", "llm-api-key"].forEach((id) => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -395,9 +408,22 @@
   });
   $("#leaderboard-tables")?.addEventListener("click", (ev) => {
     if (ev.target.closest(".lb-check")) return;
+    const copyBtn = ev.target.closest(".lb-path-copy");
+    if (copyBtn) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      copyModelPath(copyBtn.dataset.path || "", copyBtn);
+      return;
+    }
     const btn = ev.target.closest(".lb-model");
     if (!btn) return;
     openRunFromLeaderboard(btn.dataset.runId);
+  });
+  $("#result-summary")?.addEventListener("click", (ev) => {
+    const copyBtn = ev.target.closest(".lb-path-copy");
+    if (!copyBtn) return;
+    ev.preventDefault();
+    copyModelPath(copyBtn.dataset.path || "", copyBtn);
   });
   $("#leaderboard-tables")?.addEventListener("change", (ev) => {
     const t = ev.target;
@@ -437,7 +463,12 @@
       mode: (fd.get("mode") || "swe_20filter").toString(),
       cluster: (fd.get("cluster") || "us").toString(),
       router_mode: router,
-      offload_mode: router === "slm_only" ? "—" : (fd.get("offload_mode") || "handoff").toString(),
+      offload_mode: router === "slm_only" ? "—" : (fd.get("offload_mode") || "rewrite").toString(),
+      // slm_only: checkbox (default off). tag/entropy: always stop so handoff works.
+      stop_on_offload_close:
+        router === "slm_only"
+          ? fd.get("stop_on_offload_close") === "1" || fd.get("stop_on_offload_close") === "on"
+          : true,
       model_path: modelPath,
       slm_base_url: slmBaseUrl,
       slm_model: slmModel,
@@ -650,12 +681,40 @@
     }
   }
 
-  function modelCell(val, runIds) {
-    const name = String(val ?? "");
-    if (name && runIds.has(name)) {
-      return `<td><button type="button" class="lb-model" data-run-id="${escapeHtml(name)}">${escapeHtml(name)}</button></td>`;
+  async function copyModelPath(path, btn) {
+    const text = String(path || "").trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      if (btn) {
+        const prev = btn.textContent;
+        btn.textContent = "已复制";
+        btn.classList.add("copied");
+        setTimeout(() => {
+          btn.textContent = prev || "复制";
+          btn.classList.remove("copied");
+        }, 1200);
+      }
+    } catch (_) {
+      window.prompt("复制模型路径：", text);
     }
-    return `<td>${escapeHtml(name)}</td>`;
+  }
+
+  function modelCell(val, runIds, modelPath) {
+    const name = String(val ?? "");
+    const path = String(modelPath || "").trim();
+    // Instant CSS tip via data-tip (native title has ~1s browser delay).
+    const tip = path ? ` data-tip="${escapeHtml(path)}"` : "";
+    let nameHtml;
+    if (name && runIds.has(name)) {
+      nameHtml = `<button type="button" class="lb-model" data-run-id="${escapeHtml(name)}"${tip}>${escapeHtml(name)}</button>`;
+    } else {
+      nameHtml = `<span class="lb-model-name"${tip}>${escapeHtml(name)}</span>`;
+    }
+    const copyHtml = path
+      ? `<button type="button" class="lb-path-copy" data-path="${escapeHtml(path)}" title="复制模型路径">复制</button>`
+      : "";
+    return `<td class="lb-model-cell"><span class="lb-model-wrap">${nameHtml}${copyHtml}</span></td>`;
   }
 
   function leaderboardTableHtml(cols, rows, runIds) {
@@ -663,6 +722,7 @@
     const body = rows
       .map((r) => {
         const modelName = r["模型"] ?? r.model ?? "";
+        const modelPath = r.model_path || r["模型路径"] || "";
         const highlight =
           previewRunId && modelName === previewRunId ? " class=\"lb-hl\"" : "";
         const check = select
@@ -671,7 +731,7 @@
         const cells = cols
           .map((c) => {
             const val = r[c] ?? "";
-            if (c === "模型") return modelCell(val, runIds);
+            if (c === "模型") return modelCell(val, runIds, modelPath);
             return `<td>${escapeHtml(val)}</td>`;
           })
           .join("");
@@ -935,12 +995,18 @@
     renderNode(tree, container, 0, "");
   }
 
-  function renderMetricsSummary(st, metrics, metricsRow) {
+  function renderMetricsSummary(st, metrics, metricsRow, modelPath) {
     const mode = st.mode || metrics.mode || "—";
     const router = st.router_mode || metrics.router_mode || "—";
     const off = st.offload_mode || metrics.offload_mode || "—";
     const offLabel = router === "slm_only" ? "—" : off || "—";
     const meta = `mode ${escapeHtml(mode)} · router ${escapeHtml(router)} · offload_mode ${escapeHtml(offLabel)}`;
+    const path = String(
+      modelPath || metrics?.model_path || st?.model_path || ""
+    ).trim();
+    const pathHtml = path
+      ? `<div class="model-path-line"><span class="muted">模型路径</span> <code class="model-path-code" data-tip="${escapeHtml(path)}">${escapeHtml(path)}</code> <button type="button" class="lb-path-copy" data-path="${escapeHtml(path)}" title="复制模型路径">复制</button></div>`
+      : `<div class="model-path-line muted">模型路径 —</div>`;
     let rowHtml = "";
     if (metricsRow) {
       const cells = String(metricsRow)
@@ -973,7 +1039,7 @@
         String(metrics.call_rate || "—")
       )} · 轮次调用率 ${escapeHtml(String(metrics.turn_call_rate || "—"))}</div>`;
     }
-    return `<div class="run-meta-line">${meta}</div>${rowHtml}`;
+    return `<div class="run-meta-line">${meta}</div>${pathHtml}${rowHtml}`;
   }
 
   function stopFileTreeRefresh() {
@@ -1005,7 +1071,12 @@
     const files = data.files || [];
     const key = files.join("\n");
     const treeState = resetPreview ? null : captureTreeState($("#file-tree"));
-    $("#result-summary").innerHTML = renderMetricsSummary(st, metrics, data.metrics_row);
+    $("#result-summary").innerHTML = renderMetricsSummary(
+      st,
+      metrics,
+      data.metrics_row,
+      data.model_path || metrics.model_path || st.model_path || ""
+    );
     if (resetPreview || key !== openFileKey) {
       openFileKey = key;
       renderFileTree($("#file-tree"), pathsToTree(files), runId, treeState);
@@ -1189,13 +1260,19 @@
       .filter(Boolean);
   }
 
+  // Prefer token_usage/ (new layout); fall back to adapter_stats root (legacy runs).
+  const ADAPTER_TRACE_PATHS = [
+    "logs/adapter_stats/token_usage/turn_trace.jsonl",
+    "logs/adapter_stats/turn_trace.jsonl",
+  ];
+  const ADAPTER_TURNS_PATHS = [
+    "logs/adapter_stats/token_usage/turns.jsonl",
+    "logs/adapter_stats/turns.jsonl",
+  ];
+
   async function loadTurnTrace(runId, traj) {
-    const paths = [
-      "logs/adapter_stats/turn_trace.jsonl",
-      "logs/adapter_stats/token_usage/turn_trace.jsonl",
-    ];
     let picked = [];
-    for (const p of paths) {
+    for (const p of ADAPTER_TRACE_PATHS) {
       try {
         const rows = await fetchJsonl(runId, p);
         picked = pickTraceTurns(traj, rows);
@@ -1206,7 +1283,15 @@
     }
     if (!picked.length) return [];
     try {
-      const usageRows = await fetchJsonl(runId, "logs/adapter_stats/turns.jsonl");
+      let usageRows = [];
+      for (const p of ADAPTER_TURNS_PATHS) {
+        try {
+          usageRows = await fetchJsonl(runId, p);
+          if (usageRows.length) break;
+        } catch {
+          /* try next */
+        }
+      }
       const byTurn = new Map();
       for (const row of usageRows) {
         if (row.sid !== picked[0].sid) continue;
@@ -1516,7 +1601,7 @@
 
     const unmatched =
       insertRaw && !traces.length
-        ? `<p class="muted">没有匹配到 adapter turn_trace，轨迹按 format 显示。可打开 logs/adapter_stats/turn_trace.jsonl。</p>`
+        ? `<p class="muted">没有匹配到 adapter turn_trace，轨迹按 format 显示。可打开 logs/adapter_stats/token_usage/turn_trace.jsonl。</p>`
         : "";
     return `${head}${unmatched}<div class="chat-thread">${bubbles}</div>`;
   }

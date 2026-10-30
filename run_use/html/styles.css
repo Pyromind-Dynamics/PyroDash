@@ -241,8 +241,20 @@ label.checkbox-row input[type="checkbox"] {
 .mode-field[hidden],
 label[hidden],
 #offload-mode-label[hidden],
+#stop-on-offload-label[hidden],
 .is-slm-only-hidden {
   display: none !important;
+}
+
+#stop-on-offload-label {
+  flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+#stop-on-offload-label .field-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  padding-left: 1.4rem;
 }
 
 input, select {
@@ -607,6 +619,102 @@ input:focus, select:focus {
 
 .lb-model:hover {
   color: #b6e8d4;
+}
+
+.lb-model-cell {
+  max-width: 22rem;
+}
+
+.lb-model-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  position: relative;
+}
+
+.lb-model-name {
+  font: inherit;
+}
+
+/* Instant path tip — no native title delay */
+.lb-model[data-tip],
+.lb-model-name[data-tip],
+.model-path-code[data-tip] {
+  position: relative;
+}
+
+.lb-model[data-tip]::after,
+.lb-model-name[data-tip]::after,
+.model-path-code[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  display: none;
+  max-width: min(56rem, 80vw);
+  padding: 0.35rem 0.55rem;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: #1a222c;
+  color: #e8eef5;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-all;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.lb-model[data-tip]:hover::after,
+.lb-model-name[data-tip]:hover::after,
+.model-path-code[data-tip]:hover::after {
+  display: block;
+}
+
+.lb-path-copy {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: var(--bg1);
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1;
+  padding: 0.18rem 0.35rem;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.lb-path-copy:hover {
+  color: var(--fg);
+  border-color: #7eb0e0;
+}
+
+.lb-path-copy.copied {
+  color: #b6e8d4;
+  border-color: #6aa88a;
+}
+
+.model-path-line {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin: 0.35rem 0 0.55rem;
+  font-size: 0.82rem;
+}
+
+.model-path-code {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  max-width: min(72ch, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+  background: transparent;
+  padding: 0;
 }
 
 .leaderboard-table th.lb-check-cell,

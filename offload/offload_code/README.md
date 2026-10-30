@@ -65,8 +65,8 @@ Every request records API `usage` separately for SLM and LLM (no estimates):
 - `llm_prompt_tokens` / `llm_completion_tokens`
 - `offload_count`
 
-Persisted under `logs/<run>/adapter_stats/` (`summary.json`, `sessions/`, `token_usage/`). Also via `GET /stats`.  
-落盘于 `logs/<run>/adapter_stats/`；也可通过 `GET /stats` 查看。
+Persisted under `logs/<run>/adapter_stats/token_usage/` (`turns.jsonl`, `turn_trace.jsonl`, `summary_task.json`, `summary_session.json`) plus `sessions/`. Also via `GET /stats`.  
+落盘于 `logs/<run>/adapter_stats/token_usage/`（`turns.jsonl`、`turn_trace.jsonl`、`summary_task.json`、`summary_session.json`）以及 `sessions/`；也可通过 `GET /stats` 查看。
 
 ## Config knobs (`api.sh`) / 配置项
 

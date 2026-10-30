@@ -30,11 +30,13 @@ SUPPORTED_MODES = ("swe", "swe_20filter", "deepswe", "terminal")
 from metrics import (  # noqa: E402
     _planned_instance_count,
     compute_run_metrics,
+    enrich_leaderboard_model_paths,
     format_metrics_row,
     parse_leaderboard,
     persist_run_to_result_md,
     planned_count_from_mini_extra_args,
     remove_result_md_row,
+    resolve_slm_model_path,
 )
 
 app = FastAPI(title="PyroDash run_use", version="0.2.0")
@@ -72,6 +74,7 @@ class StartRunRequest(BaseModel):
     tool_call_parser: str = "qwen3_coder"  # legacy
     reasoning_parser: str = "qwen3"  # legacy
     vllm_extra_args: str = (
+        "--max-model-len 128000\n"
         "--gpu-memory-utilization 0.90\n"
         "--tensor-parallel-size 1\n"
         "--trust-remote-code\n"
@@ -80,6 +83,7 @@ class StartRunRequest(BaseModel):
         "--tool-call-parser qwen3_coder"
     )
     sglang_extra_args: str = (
+        "--context-length 128000\n"
         "--tp 1\n"
         "--mem-fraction-static 0.90\n"
         "--tool-call-parser qwen3_coder\n"
@@ -87,7 +91,9 @@ class StartRunRequest(BaseModel):
     )
     # Empty: eval.sh keeps WORKERS / STEP_LIMIT / INSTANCE_FILTER.
     mini_extra_args: str = ""
-    offload_mode: str = "handoff"
+    offload_mode: str = "rewrite"
+    # None → derive: slm_only false, otherwise true. Web sends explicit bool for slm_only.
+    stop_on_offload_close: Optional[bool] = None
     workers: int = 4
     harness_workers: int = 8
     step_limit: int = 150  # SWE agent.step_limit
@@ -374,18 +380,46 @@ def _secret_meta(value: str) -> dict[str, Any]:
     return {"set": bool(text.strip()), "len": len(text)}
 
 
+def _display_model_path(model_path: str, slm_base_url: str, slm_model: str) -> str:
+    local = (model_path or "").strip()
+    if local:
+        return local
+    base = (slm_base_url or "").strip()
+    model = (slm_model or "").strip()
+    if base and model:
+        return f"{base}::{model}"
+    if base:
+        return base
+    if model:
+        return model
+    return ""
+
+
 def _stored_offload_mode(router_mode: str, offload_mode: str) -> str:
     if (router_mode or "") == "slm_only":
         return "—"
-    return (offload_mode or "handoff").strip() or "handoff"
+    return (offload_mode or "rewrite").strip() or "rewrite"
+
+
+def _resolve_stop_on_offload_close(
+    router_mode: str,
+    stop_on_offload_close: Optional[bool],
+) -> bool:
+    """tag/entropy always stop; slm_only defaults false unless the form opts in."""
+    if (router_mode or "") != "slm_only":
+        return True
+    if stop_on_offload_close is None:
+        return False
+    return bool(stop_on_offload_close)
 
 
 def _env_offload_mode(router_mode: str, offload_mode: str) -> str:
+    # slm_only still needs a valid argparse value for tag/api.sh; mode is unused when USE_LLM=false.
     if (router_mode or "") == "slm_only":
-        return "handoff"
-    mode = (offload_mode or "handoff").strip().lower()
+        return "rewrite"
+    mode = (offload_mode or "rewrite").strip().lower()
     if mode in ("—", "-", "n/a", ""):
-        return "handoff"
+        return "rewrite"
     return mode
 
 
@@ -421,6 +455,9 @@ def _write_run_config(
         "router_mode": body.router_mode,
         "offload_mode": _stored_offload_mode(body.router_mode, body.offload_mode),
         "use_llm": use_llm == "true",
+        "stop_on_offload_close": _resolve_stop_on_offload_close(
+            body.router_mode, body.stop_on_offload_close
+        ),
         "mode": body.mode,
         "cluster": cluster,
         "slm": {
@@ -697,6 +734,7 @@ def list_runs() -> dict[str, Any]:
                 "started_at": status.get("started_at"),
                 "updated_at": status.get("updated_at"),
                 "finished_at": status.get("finished_at"),
+                "model_path": resolve_slm_model_path(d),
             }
         )
     return {"runs": runs}
@@ -777,6 +815,9 @@ def start_run(body: StartRunRequest) -> JSONResponse:
 
     n_concurrent = body.n_concurrent if body.n_concurrent is not None else body.workers
     use_llm = "false" if body.router_mode == "slm_only" else "true"
+    stop_on_offload_close = _resolve_stop_on_offload_close(
+        body.router_mode, body.stop_on_offload_close
+    )
     slm_backend = (body.slm_backend or "vllm").strip().lower()
     if slm_backend not in ("vllm", "sglang"):
         raise HTTPException(status_code=400, detail="slm_backend must be vllm or sglang")
@@ -813,6 +854,7 @@ def start_run(body: StartRunRequest) -> JSONResponse:
             "ROUTER_MODE": body.router_mode,
             "OFFLOAD_MODE": _env_offload_mode(body.router_mode, body.offload_mode),
             "USE_LLM": use_llm,
+            "STOP_ON_OFFLOAD_CLOSE": "true" if stop_on_offload_close else "false",
             "ADAPTER_PORT": str(body.adapter_port),
             "SLM_BACKEND": slm_backend,
             "SLM_PORT": str(slm_port),
@@ -888,6 +930,9 @@ def start_run(body: StartRunRequest) -> JSONResponse:
     planned = planned_count_from_mini_extra_args(mini_extra)
     if planned is None and body.mode == "swe_20filter":
         planned = SWE20_EXPECTED
+    model_path_display = _display_model_path(
+        body.model_path, body.slm_base_url, body.slm_model
+    )
     status = {
         **prev_status,
         "run_id": run_id,
@@ -895,6 +940,7 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         "cluster": cluster,
         "router_mode": body.router_mode,
         "offload_mode": _stored_offload_mode(body.router_mode, body.offload_mode),
+        "stop_on_offload_close": stop_on_offload_close,
         "phase": "starting_adapter",
         "message": "resuming from web UI" if resumed else "launched from web UI",
         "updated_at": now,
@@ -902,6 +948,10 @@ def start_run(body: StartRunRequest) -> JSONResponse:
         "pid": None,
         "mini_extra_args": mini_extra,
     }
+    if model_path_display:
+        status["model_path"] = model_path_display
+    else:
+        status.pop("model_path", None)
     if planned is not None:
         status["planned_instances"] = planned
     else:
@@ -1147,6 +1197,7 @@ def get_run(run_id: str, log_tail: int = 48000) -> dict[str, Any]:
     status = _read_json(run_dir / "status.json")
     logs = _collect_run_logs(run_dir, status, log_tail)
     progress = _compute_progress(run_dir, status)
+    model_path = resolve_slm_model_path(run_dir)
     return {
         "run_id": run_id,
         "status": status,
@@ -1154,6 +1205,7 @@ def get_run(run_id: str, log_tail: int = 48000) -> dict[str, Any]:
         "progress": progress,
         "logs": logs,
         "files": _list_relative_files(run_dir),
+        "model_path": model_path,
     }
 
 
@@ -1165,6 +1217,7 @@ def api_leaderboard(mode: str = "swe_20filter") -> dict[str, Any]:
             detail=f"mode must be one of {', '.join(SUPPORTED_MODES)}",
         )
     data = parse_leaderboard(RESULT_MD, mode)
+    enrich_leaderboard_model_paths(data, OUTPUT_DIR)
     data["result_md"] = str(RESULT_MD)
     return data
 
@@ -1254,6 +1307,7 @@ def get_results(run_id: str) -> dict[str, Any]:
             job = _parse_job_summary(eval_dir)
             summary = {**summary, **job}
     metrics = compute_run_metrics(run_dir)
+    model_path = str(metrics.get("model_path") or resolve_slm_model_path(run_dir) or "")
     return {
         "run_id": run_id,
         "status": status,
@@ -1262,6 +1316,7 @@ def get_results(run_id: str) -> dict[str, Any]:
         "metrics": metrics,
         "metrics_row": format_metrics_row(metrics),
         "files": _list_relative_files(run_dir),
+        "model_path": model_path,
     }
 
 

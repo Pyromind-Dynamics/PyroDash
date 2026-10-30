@@ -19,6 +19,9 @@ Unified entry **`run_sh/run_coding.sh`**, supporting:
 **ROUTER:** `tag` / `entropy` (needs LLM) or **`slm_only`** (SLM only, no offload prompt injection).  
 `tag` / `entropy`（需 LLM）或 **`slm_only`**（仅小模型，不注入 offload 提示词）。
 
+**`STOP_ON_OFFLOAD_CLOSE`:** whether `<|/llm_offload|>` is passed as an SLM stop string. `tag`/`entropy` default `true` (needed for handoff). **`slm_only` defaults `false`** so the model can keep generating tool calls after emitting the marker; the web form shows a checkbox to turn it back on.  
+是否把 `<|/llm_offload|>` 当作小模型 stop。`tag`/`entropy` 默认 `true`；**`slm_only` 默认 `false`**，避免吐出标记后被截断；网页在 slm_only 下提供勾选可改回 true。
+
 **Local SLM engine / 本地小模型引擎:** `SLM_BACKEND=vllm|sglang` (default vllm). Web “本地权重” can pick engine and advanced port / GPU / parser settings; remote API does not start a local engine.  
 网页「本地权重」可选引擎并改 port / GPU / parser 等；远程 API 不启本地引擎。
 
@@ -27,6 +30,9 @@ Unified entry **`run_sh/run_coding.sh`**, supporting:
 
 **History UI / 历史结果页:** Split preview; `.traj.json` rendered as chat (keeps `<|llm_offload|>` markers).  
 左右分栏预览；`.traj.json` 渲染为对话（保留 `<|llm_offload|>` 标记）。
+
+**Adapter stats / 统计落盘:** under `output/<RUN_ID>/logs/adapter_stats/token_usage/` — `turns.jsonl`, `turn_trace.jsonl`, `summary_task.json` (per-task), `summary_session.json` (per-session); plus `sessions/*.json`. Leaderboard metrics and the history traj viewer read these paths (legacy root-level `summary.json` / `turns.jsonl` still work).  
+统计在 `.../adapter_stats/token_usage/`：`turns.jsonl`、`turn_trace.jsonl`、`summary_task.json`、`summary_session.json`；另有 `sessions/`。汇总表与轨迹预览已适配；旧 run 根目录文件仍可读。
 
 ## CLI
 

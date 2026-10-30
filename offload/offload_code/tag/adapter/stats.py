@@ -121,7 +121,17 @@ class SessionStats:
 
 
 class StatsStore:
-    """Thread-safe in-memory store with durable JSON snapshots under stats_dir."""
+    """Thread-safe in-memory store with durable JSON snapshots under stats_dir.
+
+    Canonical on-disk layout (under ``stats_dir/token_usage/``)::
+
+        turns.jsonl
+        turn_trace.jsonl
+        summary_task.json      # per-task aggregates
+        summary_session.json   # per-session aggregates
+
+    Per-session detail files remain in ``stats_dir/sessions/``.
+    """
 
     def __init__(self, stats_dir: str | Path | None = None) -> None:
         self._lock = threading.Lock()
@@ -134,7 +144,12 @@ class StatsStore:
             self.token_usage_dirs.append(self.stats_dir / "token_usage")
         extra = os.environ.get("TOKEN_USAGE_DIR", "").strip()
         if extra:
-            self.token_usage_dirs.append(Path(extra))
+            p = Path(extra)
+            # Legacy: TOKEN_USAGE_DIR pointed at adapter_stats root → redirect into token_usage/.
+            if self.stats_dir is not None and p.resolve() == self.stats_dir.resolve():
+                p = self.stats_dir / "token_usage"
+            if all(p.resolve() != existing.resolve() for existing in self.token_usage_dirs):
+                self.token_usage_dirs.append(p)
         for path in self.token_usage_dirs:
             path.mkdir(parents=True, exist_ok=True)
 
@@ -187,9 +202,9 @@ class StatsStore:
                 "llm_usage": _json_usage(turn.llm_usage),
             }
             self._append_token_turn(row)
-            self._write_token_summary(token_summary)
+            self._write_summary_task(token_summary)
+            self._write_summary_session(summary)
         self._write_session(sid, snap)
-        self._write_summary(summary)
         return s
 
     def summary(self) -> dict[str, Any]:
@@ -282,14 +297,23 @@ class StatsStore:
             except Exception:
                 logger.exception("failed to append token usage %s", path)
 
-    def _write_token_summary(self, summary: dict[str, Any]) -> None:
+    def _write_summary_task(self, summary: dict[str, Any]) -> None:
         text = json.dumps(summary, indent=2, ensure_ascii=False)
         for directory in self.token_usage_dirs:
-            path = directory / "summary.json"
+            path = directory / "summary_task.json"
             try:
                 path.write_text(text, encoding="utf-8")
             except Exception:
-                logger.exception("failed to write token usage summary %s", path)
+                logger.exception("failed to write summary_task %s", path)
+
+    def _write_summary_session(self, summary: dict[str, Any]) -> None:
+        text = json.dumps(summary, indent=2, ensure_ascii=False)
+        for directory in self.token_usage_dirs:
+            path = directory / "summary_session.json"
+            try:
+                path.write_text(text, encoding="utf-8")
+            except Exception:
+                logger.exception("failed to write summary_session %s", path)
 
     def _write_session(self, sid: str, snap: dict[str, Any]) -> None:
         if self.stats_dir is None:
@@ -300,12 +324,3 @@ class StatsStore:
             path.write_text(json.dumps(snap, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception:
             logger.exception("failed to write session stats %s", path)
-
-    def _write_summary(self, summary: dict[str, Any]) -> None:
-        if self.stats_dir is None:
-            return
-        path = self.stats_dir / "summary.json"
-        try:
-            path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
-        except Exception:
-            logger.exception("failed to write summary stats %s", path)

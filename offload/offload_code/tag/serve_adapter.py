@@ -61,6 +61,19 @@ def main() -> None:
     p.add_argument("--llm-api-key", default=os.environ.get("LLM_API_KEY", ""))
     p.add_argument("--llm-model", default=os.environ.get("LLM_MODEL", "deepseek-v4.1-flash"))
     p.add_argument("--use-llm", type=_parse_bool, default=_parse_bool(os.environ.get("USE_LLM", "true")))
+    # Default: offload handoff needs stop=true; SLM-only usually wants false so generation can reach tool_calls.
+    _use_llm_default = _parse_bool(os.environ.get("USE_LLM", "true"))
+    _stop_env = os.environ.get("STOP_ON_OFFLOAD_CLOSE", "").strip()
+    if _stop_env:
+        _stop_default = _parse_bool(_stop_env)
+    else:
+        _stop_default = bool(_use_llm_default)
+    p.add_argument(
+        "--stop-on-offload-close",
+        type=_parse_bool,
+        default=_stop_default,
+        help="if true, pass <|/llm_offload|> as SLM stop; default false when USE_LLM=false",
+    )
     p.add_argument(
         "--max-new-tokens",
         type=int,
@@ -105,9 +118,9 @@ def main() -> None:
     p.add_argument("--llm-top-p", type=float, default=float(os.environ.get("LLM_TOP_P", "1.0")))
     p.add_argument(
         "--offload-mode",
-        default=os.environ.get("OFFLOAD_MODE", "handoff"),
+        default=os.environ.get("OFFLOAD_MODE", "rewrite"),
         choices=("handoff", "rewrite", "keep"),
-        help="handoff: original part_think handoff; rewrite: drop SLM and regenerate; keep: keep SLM text without part_think",
+        help="rewrite: drop SLM and regenerate; handoff: part_think continue; keep: keep SLM text without part_think",
     )
     args = p.parse_args()
 
@@ -139,6 +152,7 @@ def main() -> None:
         slm=slm,
         llm=llm,
         use_llm=bool(args.use_llm),
+        stop_on_offload_close=bool(args.stop_on_offload_close),
         slm_stop_token_ids=_parse_int_list(args.slm_stop_token_ids),
         slm_skip_special_tokens=skip,
         sampling_defaults={
@@ -153,7 +167,8 @@ def main() -> None:
 
     logger.info(
         "adapter listening on %s:%s | SLM=%s @ %s | LLM=%s @ %s | use_llm=%s | "
-        "offload_mode=%s | max_new_tokens=%s | stats_dir=%s | slm_sampling=%s | llm_sampling=%s",
+        "stop_on_offload_close=%s | offload_mode=%s | max_new_tokens=%s | stats_dir=%s | "
+        "slm_sampling=%s | llm_sampling=%s",
         args.host,
         args.port,
         slm.model,
@@ -161,6 +176,7 @@ def main() -> None:
         llm.model,
         llm.normalized_base(),
         args.use_llm,
+        args.stop_on_offload_close,
         args.offload_mode,
         args.max_new_tokens if args.max_new_tokens > 0 else "unlimited",
         stats_dir,

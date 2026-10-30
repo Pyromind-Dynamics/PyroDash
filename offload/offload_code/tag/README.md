@@ -13,6 +13,9 @@ bash api.sh
 Modes (`OFFLOAD_MODE`): `handoff` | `rewrite` | `keep`.  
 模式（`OFFLOAD_MODE`）：`handoff` | `rewrite` | `keep`。
 
+**`STOP_ON_OFFLOAD_CLOSE` / `--stop-on-offload-close`:** if true, SLM requests use `stop=["<|/llm_offload|>"]`. Defaults to `true` when `USE_LLM=true`, **`false` when `USE_LLM=false` (slm_only)** so generation can continue to tool calls.  
+为 true 时请求带 `stop=["<|/llm_offload|>"]`。`USE_LLM=true` 默认 true；**`USE_LLM=false`（slm_only）默认 false**，避免截断后无 tool_call。
+
 Defaults / 默认: `ADAPTER_HOST=0.0.0.0`, `ADAPTER_PORT=18027`, `VLLM_PORT=8007`.
 
 See [../README.md](../README.md) for the HTTP contract and token stats.  

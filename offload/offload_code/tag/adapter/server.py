@@ -181,7 +181,7 @@ class OffloadAdapter:
         max_context_tokens: int = 128000,
         stats_dir: str | None = None,
         max_turns_per_session: int = 0,
-        offload_mode: str = "handoff",
+        offload_mode: str = "rewrite",
     ) -> None:
         self.slm = slm
         self.llm = llm
@@ -196,7 +196,7 @@ class OffloadAdapter:
         self._llm_sampling = dict(llm_sampling or {})
         self._max_context_tokens = int(max_context_tokens)
         self.max_turns_per_session = int(max_turns_per_session)
-        mode = (offload_mode or "handoff").strip().lower()
+        mode = (offload_mode or "rewrite").strip().lower()
         if mode not in ("handoff", "rewrite", "keep"):
             raise ValueError(f"offload_mode must be handoff, rewrite, or keep, got {offload_mode!r}")
         self.offload_mode = mode

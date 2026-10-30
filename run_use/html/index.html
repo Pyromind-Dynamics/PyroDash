@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=27" />
+  <link rel="stylesheet" href="styles.css?v=28" />
 </head>
 <body>
   <div class="page">
@@ -56,10 +56,15 @@
             <label id="offload-mode-label">
               OFFLOAD_MODE（仅 tag）
               <select name="offload_mode" id="offload-mode-select">
-                <option value="handoff" selected>handoff — 保留小模型已写内容，大模型从断点续写（&lt;part_think&gt;）</option>
-                <option value="rewrite">rewrite — 丢弃小模型本轮输出，由大模型整段重写</option>
+                <option value="rewrite" selected>rewrite — 丢弃小模型本轮输出，由大模型整段重写</option>
+                <option value="handoff">handoff — 保留小模型已写内容，大模型从断点续写（&lt;part_think&gt;）</option>
                 <option value="keep">keep — 保留小模型文本，大模型直接续写（无 part_think 协议）</option>
               </select>
+            </label>
+            <label id="stop-on-offload-label" class="checkbox-row" hidden>
+              <input type="checkbox" name="stop_on_offload_close" id="stop-on-offload-close" value="1" />
+              把 &lt;|/llm_offload|&gt; 当作 SLM 停止符
+              <span class="field-hint">仅 slm_only。默认关闭，避免吐出 offload 标记后被截断、本轮无 tool_call。</span>
             </label>
             <p id="router-help" class="field-help full"></p>
           </fieldset>
@@ -96,13 +101,14 @@
                 CUDA_VISIBLE_DEVICES
                 <input name="cuda_visible_devices" id="cuda-visible-devices" type="text" value="0" />
               </label>
-              <details class="full slm-advanced" id="slm-advanced">
+              <details class="full slm-advanced" id="slm-advanced" open>
                 <summary>高级引擎参数（整段原样传给 vLLM / SGLang，可增删任意 --flag）</summary>
                 <div class="slm-advanced-grid">
                   <label class="backend-vllm full">
                     VLLM_EXTRA_ARGS
-                    <span class="field-hint">每个 --flag 单独一行。需要限长时自行加上一行：--max-model-len 128000</span>
-                    <textarea name="vllm_extra_args" id="vllm-extra-args" class="mono-args" rows="7" spellcheck="false">
+                    <span class="field-hint">每个 --flag 单独一行；默认已含 --max-model-len 128000，可改可删。</span>
+                    <textarea name="vllm_extra_args" id="vllm-extra-args" class="mono-args" rows="8" spellcheck="false">
+--max-model-len 128000
 --gpu-memory-utilization 0.90
 --tensor-parallel-size 1
 --trust-remote-code
@@ -112,8 +118,9 @@
                   </label>
                   <label class="backend-sglang full">
                     SGLANG_EXTRA_ARGS
-                    <span class="field-hint">每个 --flag 单独一行。需要限长时自行加上一行：--context-length 128000</span>
-                    <textarea name="sglang_extra_args" id="sglang-extra-args" class="mono-args" rows="5" spellcheck="false">
+                    <span class="field-hint">每个 --flag 单独一行；默认已含 --context-length 128000，可改可删。</span>
+                    <textarea name="sglang_extra_args" id="sglang-extra-args" class="mono-args" rows="6" spellcheck="false">
+--context-length 128000
 --tp 1
 --mem-fraction-static 0.90
 --tool-call-parser qwen3_coder
@@ -387,6 +394,6 @@
       </section>
     </main>
   </div>
-  <script src="app.js?v=32"></script>
+  <script src="app.js?v=36"></script>
 </body>
 </html>
