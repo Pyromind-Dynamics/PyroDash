@@ -177,6 +177,9 @@
               <input name="resume" id="resume" type="checkbox" value="1" />
               resume（勾选后对已有 RUN_ID 断点续跑）
             </label>
+            <p class="field-help full">
+              SWE：若该 RUN_ID 的 preds 已覆盖全部题目，resume 只重跑 harness 打分，不起 vLLM/adapter。
+            </p>
           </fieldset>
 
           <fieldset id="python-env-fieldset">

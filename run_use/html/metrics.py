@@ -898,11 +898,39 @@ def planned_count_from_mini_extra_args(text: str) -> Optional[int]:
 
 
 def _planned_instance_count(run_dir: Path) -> Optional[int]:
-    """Instances mini-extra actually scheduled, e.g. after --slice 0:1.
+    """Instances this run was scheduled for (denominator for score).
 
-    Order: live ``Running on N`` → eval.log argv → status.json
-    ``planned_instances`` / ``mini_extra_args`` (set at launch, before eval.log exists).
+    Prefer the fixed launch snapshot in ``logs/config.json`` — that value does
+    not change on resume. Do not trust ``Running on N`` in logs (resume with
+    preds already done can log ``Running on 0`` and break ``1/?`` display).
     """
+    def _positive_int(raw: Any) -> Optional[int]:
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            return None
+        return n if n > 0 else None
+
+    cfg = _read_json(run_dir / "logs" / "config.json")
+    if isinstance(cfg, dict):
+        eval_cfg = cfg.get("eval") if isinstance(cfg.get("eval"), dict) else {}
+        n = _positive_int(eval_cfg.get("planned_instances"))
+        if n is not None:
+            return n
+        n = planned_count_from_mini_extra_args(str(eval_cfg.get("mini_extra_args") or ""))
+        if n is not None and n > 0:
+            return n
+
+    status = _read_json(run_dir / "status.json") or {}
+    if isinstance(status, dict):
+        n = _positive_int(status.get("planned_instances"))
+        if n is not None:
+            return n
+        n = planned_count_from_mini_extra_args(str(status.get("mini_extra_args") or ""))
+        if n is not None and n > 0:
+            return n
+
+    # Legacy fallback only: positive ``Running on N`` / slice in logs.
     candidates = [run_dir / "logs" / "eval.log"]
     candidates.extend(run_dir.glob("*/runs/minisweagent.log"))
     found: Optional[int] = None
@@ -915,24 +943,16 @@ def _planned_instance_count(run_dir: Path) -> Optional[int]:
         except OSError:
             continue
         for match in _RUNNING_ON.finditer(text):
-            found = int(match.group(1))
+            n = int(match.group(1))
+            if n > 0:
+                found = n
         n = planned_count_from_mini_extra_args(text)
-        if n is not None:
+        if n is not None and n > 0:
             argv_count = n
     if found is not None:
         return found
     if argv_count is not None:
         return argv_count
-
-    status = _read_json(run_dir / "status.json") or {}
-    if isinstance(status, dict):
-        raw_planned = status.get("planned_instances")
-        if raw_planned is not None:
-            try:
-                return int(raw_planned)
-            except (TypeError, ValueError):
-                pass
-        return planned_count_from_mini_extra_args(str(status.get("mini_extra_args") or ""))
     return None
 
 

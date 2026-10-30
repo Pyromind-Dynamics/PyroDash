@@ -356,7 +356,61 @@ on_exit() {
 }
 trap on_exit EXIT INT TERM HUP
 
+# SWE resume: if preds already cover planned instances, skip adapter/vLLM and grade only.
+HARNESS_ONLY=0
 if [[ "${RESUME}" == "1" || "${RESUME}" == "true" || "${RESUME}" == "yes" ]]; then
+  case "${MODE}" in
+    swe|swe_20filter)
+      _preds_n="$("${PYTHON_BIN}" - "${STATUS_FILE}" "${CONFIG_FILE}" "${EVAL_OUT}/runs/preds.json" <<'PY'
+import json, sys
+from pathlib import Path
+status_path, config_path, preds_path = map(Path, sys.argv[1:4])
+planned = 0
+for path in (status_path, config_path):
+    if not path.is_file():
+        continue
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        continue
+    if path == status_path:
+        raw = data.get("planned_instances")
+    else:
+        raw = (data.get("eval") or {}).get("planned_instances")
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        continue
+    if n > 0:
+        planned = n
+        break
+preds_n = 0
+if preds_path.is_file():
+    try:
+        preds = json.loads(preds_path.read_text())
+        if isinstance(preds, dict):
+            preds_n = len(preds)
+    except Exception:
+        pass
+print(f"{planned} {preds_n}")
+PY
+)"
+      _planned="${_preds_n%% *}"
+      _have="${_preds_n##* }"
+      if [[ "${_planned}" =~ ^[1-9][0-9]*$ && "${_have}" =~ ^[0-9]+$ ]] && (( _have >= _planned )); then
+        HARNESS_ONLY=1
+        echo "[run] harness-only resume: preds=${_have} >= planned=${_planned} (skip adapter/vLLM)"
+      else
+        echo "[run] resume: preds=${_have:-0} planned=${_planned:-?} (need adapter for remaining agent work)"
+      fi
+      ;;
+  esac
+fi
+export HARNESS_ONLY
+
+if [[ "${HARNESS_ONLY}" == "1" ]]; then
+  write_status "evaluating" "harness-only resume (preds complete)"
+elif [[ "${RESUME}" == "1" || "${RESUME}" == "true" || "${RESUME}" == "yes" ]]; then
   write_status "starting_adapter" "resuming ${ROUTER_MODE} offload adapter"
 else
   write_status "starting_adapter" "launching ${ROUTER_MODE} offload adapter"
@@ -393,43 +447,51 @@ else
   echo "[run] CLUSTER=us"
 fi
 
-echo "[run] MODE=${MODE} RUN_ID=${RUN_ID} RESUME=${RESUME} SLM_BACKEND=${SLM_BACKEND}"
+echo "[run] MODE=${MODE} RUN_ID=${RUN_ID} RESUME=${RESUME} SLM_BACKEND=${SLM_BACKEND} HARNESS_ONLY=${HARNESS_ONLY}"
 echo "[run] RUN_DIR=${RUN_DIR}"
 if [[ "${RESUME}" == "1" || "${RESUME}" == "true" || "${RESUME}" == "yes" ]]; then
   echo "[run] resume: keeping existing ${EVAL_OUT} (SWE skips preds.json keys)"
 fi
-echo "[run] starting ${API_SH} → ${ADAPTER_LOG}"
-
-setsid bash "${API_SH}" >"${ADAPTER_LOG}" 2>&1 &
-ADAPTER_PID=$!
-
-HEALTH_URL="http://127.0.0.1:${ADAPTER_PORT}/health"
-DEADLINE=$((SECONDS + 1800))
-echo "[run] waiting for ${HEALTH_URL}" | tee -a "${ADAPTER_LOG}"
-while (( SECONDS < DEADLINE )); do
-  if ! kill -0 "${ADAPTER_PID}" 2>/dev/null; then
-    echo "[run ERROR] adapter exited early; see ${ADAPTER_LOG}" >&2
-    write_status "failed" "adapter exited early"
-    exit 1
-  fi
-  if curl -sf --max-time 2 "${HEALTH_URL}" >/dev/null 2>&1; then
-    echo "[run] adapter ready" | tee -a "${ADAPTER_LOG}"
-    break
-  fi
-  echo "[run] still waiting for adapter health… ($(date '+%H:%M:%S'))" >>"${ADAPTER_LOG}"
-  sleep 2
-done
-if ! curl -sf --max-time 2 "${HEALTH_URL}" >/dev/null 2>&1; then
-  echo "[run ERROR] adapter not ready; see ${ADAPTER_LOG}" >&2
-  write_status "failed" "adapter health timeout"
-  exit 1
-fi
 
 HOST_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 HOST_IP="${HOST_IP:-127.0.0.1}"
+PROGRESS_PID=""
 
-write_status "evaluating" "running ${MODE}" \
-  "{\"adapter_port\": ${ADAPTER_PORT}, \"host_ip\": \"${HOST_IP}\"}"
+if [[ "${HARNESS_ONLY}" != "1" ]]; then
+  echo "[run] starting ${API_SH} → ${ADAPTER_LOG}"
+
+  setsid bash "${API_SH}" >"${ADAPTER_LOG}" 2>&1 &
+  ADAPTER_PID=$!
+
+  HEALTH_URL="http://127.0.0.1:${ADAPTER_PORT}/health"
+  DEADLINE=$((SECONDS + 1800))
+  echo "[run] waiting for ${HEALTH_URL}" | tee -a "${ADAPTER_LOG}"
+  while (( SECONDS < DEADLINE )); do
+    if ! kill -0 "${ADAPTER_PID}" 2>/dev/null; then
+      echo "[run ERROR] adapter exited early; see ${ADAPTER_LOG}" >&2
+      write_status "failed" "adapter exited early"
+      exit 1
+    fi
+    if curl -sf --max-time 2 "${HEALTH_URL}" >/dev/null 2>&1; then
+      echo "[run] adapter ready" | tee -a "${ADAPTER_LOG}"
+      break
+    fi
+    echo "[run] still waiting for adapter health… ($(date '+%H:%M:%S'))" >>"${ADAPTER_LOG}"
+    sleep 2
+  done
+  if ! curl -sf --max-time 2 "${HEALTH_URL}" >/dev/null 2>&1; then
+    echo "[run ERROR] adapter not ready; see ${ADAPTER_LOG}" >&2
+    write_status "failed" "adapter health timeout"
+    exit 1
+  fi
+
+  write_status "evaluating" "running ${MODE}" \
+    "{\"adapter_port\": ${ADAPTER_PORT}, \"host_ip\": \"${HOST_IP}\"}"
+else
+  echo "[run] skipping adapter/vLLM (HARNESS_ONLY=1)"
+  write_status "evaluating" "harness-only resume (preds complete)" \
+    "{\"host_ip\": \"${HOST_IP}\", \"harness_only\": true}"
+fi
 
 EVAL_LOG="${LOG_DIR}/eval.log"
 echo "[run] eval → ${EVAL_OUT} (log ${EVAL_LOG})"
@@ -441,12 +503,13 @@ export TTY_COMPATIBLE=0
 unset FORCE_COLOR
 export PYTHONPATH="${PYTHONPATH:-}"
 
-# Background: refresh status.json progress from preds while eval runs
-(
-  while kill -0 "${ADAPTER_PID}" 2>/dev/null; do
-    sleep 15
-    [[ -f "${STATUS_FILE}" ]] || continue
-    "${PYTHON_BIN}" - "${STATUS_FILE}" "${EVAL_OUT}" "${MODE}" <<'PY' || true
+# Background: refresh status.json progress from preds while eval runs (needs adapter).
+if [[ "${HARNESS_ONLY}" != "1" && -n "${ADAPTER_PID}" ]]; then
+  (
+    while kill -0 "${ADAPTER_PID}" 2>/dev/null; do
+      sleep 15
+      [[ -f "${STATUS_FILE}" ]] || continue
+      "${PYTHON_BIN}" - "${STATUS_FILE}" "${EVAL_OUT}" "${MODE}" <<'PY' || true
 import json, re, sys, time
 from pathlib import Path
 status_path, eval_out, mode = sys.argv[1:4]
@@ -501,9 +564,10 @@ data["message"] = (
 data["updated_at"] = data["progress"]["updated_at"]
 p.write_text(json.dumps(data, indent=2) + "\n")
 PY
-  done
-) &
-PROGRESS_PID=$!
+    done
+  ) &
+  PROGRESS_PID=$!
+fi
 
 set +e
 case "${MODE}" in
@@ -523,17 +587,28 @@ case "${MODE}" in
       mkdir -p "${SWEBENCH_GITHUB_CACHE}"
       echo "[run] shanghai SWE prefix=${SWEBENCH_DOCKER_IMAGE_PREFIX} harness=${HARNESS_PYTHON}"
     fi
-    EVAL_OUTPUT_DIR="${EVAL_OUT}" \
-    INSTANCE_FILTER="${INSTANCE_FILTER}" \
-    WORKERS="${WORKERS}" \
-    HARNESS_WORKERS="${HARNESS_WORKERS}" \
-    STEP_LIMIT="${STEP_LIMIT}" \
-    MINI_EXTRA_ARGS="${MINI_EXTRA_ARGS:-}" \
-    RUN_ID="${RUN_ID}_pred" \
-    PYTHON_BIN="${PYTHON_BIN}" \
-    HARNESS_PYTHON="${HARNESS_PYTHON}" \
-      bash "${EVAL_SH}" --host "${HOST_IP}" --port "${ADAPTER_PORT}" \
-      >"${EVAL_LOG}" 2>&1
+    if [[ "${HARNESS_ONLY}" == "1" ]]; then
+      EVAL_OUTPUT_DIR="${EVAL_OUT}" \
+      HARNESS_ONLY=1 \
+      HARNESS_WORKERS="${HARNESS_WORKERS}" \
+      RUN_ID="${RUN_ID}_pred" \
+      PYTHON_BIN="${PYTHON_BIN}" \
+      HARNESS_PYTHON="${HARNESS_PYTHON}" \
+        bash "${EVAL_SH}" \
+        >"${EVAL_LOG}" 2>&1
+    else
+      EVAL_OUTPUT_DIR="${EVAL_OUT}" \
+      INSTANCE_FILTER="${INSTANCE_FILTER}" \
+      WORKERS="${WORKERS}" \
+      HARNESS_WORKERS="${HARNESS_WORKERS}" \
+      STEP_LIMIT="${STEP_LIMIT}" \
+      MINI_EXTRA_ARGS="${MINI_EXTRA_ARGS:-}" \
+      RUN_ID="${RUN_ID}_pred" \
+      PYTHON_BIN="${PYTHON_BIN}" \
+      HARNESS_PYTHON="${HARNESS_PYTHON}" \
+        bash "${EVAL_SH}" --host "${HOST_IP}" --port "${ADAPTER_PORT}" \
+        >"${EVAL_LOG}" 2>&1
+    fi
     EVAL_RC=$?
     ;;
   deepswe)
@@ -566,8 +641,10 @@ case "${MODE}" in
 esac
 set -e
 
-kill "${PROGRESS_PID}" 2>/dev/null || true
-wait "${PROGRESS_PID}" 2>/dev/null || true
+if [[ -n "${PROGRESS_PID}" ]]; then
+  kill "${PROGRESS_PID}" 2>/dev/null || true
+  wait "${PROGRESS_PID}" 2>/dev/null || true
+fi
 
 tail -n 40 "${EVAL_LOG}" || true
 
